@@ -1,4 +1,3 @@
-// screens/HomeScreen.js
 import React, { useContext, useState } from "react";
 import {
   View,
@@ -10,7 +9,7 @@ import {
   Alert,
   Share,
   StyleSheet,
-} from "react-native";
+} from "react-native"; // 👈 ActivityIndicator borttagen här
 import * as Clipboard from "expo-clipboard";
 import { GroupsContext } from "../context/GroupsContext";
 import { auth } from "../firebaseConfig";
@@ -41,6 +40,7 @@ export default function HomeScreen() {
     importGroup,
     renameGroup,
     deleteGroup,
+    // 👈 loading finns kvar i context men används inte längre
   } = useContext(GroupsContext);
 
   const [groupName, setGroupName] = useState("");
@@ -60,33 +60,40 @@ export default function HomeScreen() {
   };
 
   const handleCreateGroup = async () => {
-    if (!groupName.trim()) {
-      Alert.alert("Fel", "Ange ett gruppnamn.");
-      return;
+    try {
+      if (!groupName.trim()) {
+        Alert.alert("Fel", "Ange ett gruppnamn.");
+        return;
+      }
+      const code = generateGroupCode(8);
+      await createGroup(capitalizeFirst(groupName.trim()), code);
+      setGroupName("");
+      Alert.alert(
+        "Grupp skapad",
+        `Gruppen "${capitalizeFirst(groupName)}" har skapats med kod: ${code}`
+      );
+    } catch (error) {
+      Alert.alert("Fel vid skapande", error.message || "Något gick fel.");
     }
-    const code = generateGroupCode(8);
-    await createGroup(capitalizeFirst(groupName.trim()), code);
-    setGroupName("");
-    Alert.alert(
-      "Grupp skapad",
-      `Gruppen "${capitalizeFirst(groupName)}" har skapats med kod: ${code}`
-    );
   };
 
   const handleImportGroup = async () => {
-    if (!groupCode.trim()) {
-      Alert.alert("Fel", "Ange en gruppkod.");
-      return;
+    try {
+      if (!groupCode.trim()) {
+        Alert.alert("Fel", "Ange en gruppkod.");
+        return;
+      }
+      await importGroup(groupCode.trim().toUpperCase());
+      setGroupCode("");
+      Alert.alert(
+        "Grupp importerad",
+        `Grupp med kod ${groupCode.trim().toUpperCase()} har importerats.`
+      );
+    } catch (error) {
+      Alert.alert("Fel vid import", error.message || "Något gick fel.");
     }
-    await importGroup(groupCode.trim().toUpperCase());
-    setGroupCode("");
-    Alert.alert(
-      "Grupp importerad",
-      `Grupp med kod ${groupCode.trim().toUpperCase()} har importerats.`
-    );
   };
-
-  const openMenu = (group) => {
+    const openMenu = (group) => {
     setActiveGroup(group);
     setMenuVisible(true);
   };
@@ -145,12 +152,13 @@ export default function HomeScreen() {
     Alert.alert("Grupp uppdaterad", "Gruppnamnet har ändrats.");
   };
 
-  // ✅ Header med gruppnamn och kod på separata rader
   const Header = () => (
     <View style={styles.infoBox}>
       {selectedGroup ? (
         <View>
-          <Text style={styles.infoTitle}>Grupp: {capitalizeFirst(selectedGroup.name)}</Text>
+          <Text style={styles.infoTitle}>
+            Grupp: {capitalizeFirst(selectedGroup.name)}
+          </Text>
           <Text style={styles.infoText}>Kod: {selectedGroup.code}</Text>
         </View>
       ) : (
@@ -161,7 +169,8 @@ export default function HomeScreen() {
       </View>
     </View>
   );
-    return (
+
+  return (
     <View style={styles.container}>
       <Header />
 
@@ -181,14 +190,23 @@ export default function HomeScreen() {
         onChangeText={setGroupCode}
         style={styles.input}
       />
-      <Button title="Importera grupp" type="secondary" onPress={handleImportGroup} />
+      <Button
+        title="Importera grupp"
+        type="secondary"
+        onPress={handleImportGroup}
+      />
+
+      {/* 👋 Loading-indikator helt borttagen */}
 
       {/* Lista grupper */}
       <FlatList
         data={groups}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.groupItem} onPress={() => openMenu(item)}>
+          <TouchableOpacity
+            style={styles.groupItem}
+            onPress={() => openMenu(item)}
+          >
             <Text style={styles.groupText}>
               {capitalizeFirst(item.name)} ({item.code})
             </Text>

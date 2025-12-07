@@ -21,12 +21,16 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.vonstaaf.staafiliciousfrontend"
+      "package": "com.vonstaaf.staafiliciousfrontend",
+      "googleServicesFile": "${GOOGLE_SERVICES_JSON}"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [],
+    "plugins": [
+      "expo-asset",
+      "expo-font"
+    ],
     "extra": {
       "eas": {
         "projectId": "84ce2dfb-06fd-4fe5-8703-cda97f21d310"

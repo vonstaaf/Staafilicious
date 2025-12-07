@@ -36,11 +36,16 @@ export const GroupsProvider = ({ children }) => {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // 🔄 Hämta grupper där användaren är medlem
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
 
-    const q = query(collection(db, "groups"), where("ownerUid", "==", user.uid));
+    const q = query(
+      collection(db, "groups"),
+      where("members", "array-contains", user.uid)
+    );
+
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -63,10 +68,14 @@ export const GroupsProvider = ({ children }) => {
     return () => unsubscribe();
   }, [selectedGroup]);
 
+  // ✅ Skapa grupp – ägaren blir första medlem
   const createGroup = async (name, code) => {
     try {
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user) {
+        console.error("Ingen användare inloggad – kan inte skapa grupp.");
+        return;
+      }
 
       if (!name.trim() || !code.trim()) {
         console.error("Fel: Gruppnamn och kod krävs.");
@@ -74,16 +83,19 @@ export const GroupsProvider = ({ children }) => {
       }
 
       setLoading(true);
+
       const newGroup = {
         name: capitalizeFirst(name),
         code,
         ownerUid: user.uid,
+        members: [user.uid], // 👈 ägaren som första medlem
         products: [],
-        kostnader: [], // ✅ rätt namn
+        kostnader: [],
+        createdAt: new Date().toISOString(),
       };
 
       const docRef = await addDoc(collection(db, "groups"), newGroup);
-      setGroups((prev) => [...prev, { id: docRef.id, ...newGroup }]);
+      console.log("Ny grupp skapad med id:", docRef.id);
     } catch (error) {
       console.error("Fel vid skapande av grupp:", error.message);
     } finally {
@@ -91,10 +103,14 @@ export const GroupsProvider = ({ children }) => {
     }
   };
 
+  // ✅ Importera grupp – lägg till användaren i members
   const importGroup = async (code) => {
     try {
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user) {
+        console.error("Ingen användare inloggad – kan inte importera grupp.");
+        return;
+      }
 
       if (!code.trim()) {
         console.error("Fel: Gruppkod krävs.");
@@ -102,27 +118,29 @@ export const GroupsProvider = ({ children }) => {
       }
 
       setLoading(true);
+
       const q = query(collection(db, "groups"), where("code", "==", code));
       const snapshot = await getDocs(q);
 
-      if (!snapshot.empty) {
-        const importedGroup = snapshot.docs[0];
-        setGroups((prev) => [
-          ...prev,
-          { id: importedGroup.id, ...importedGroup.data() },
-        ]);
-      } else {
-        const imported = {
-          name: "Importerad grupp",
-          code,
-          ownerUid: user.uid,
-          products: [],
-          kostnader: [], // ✅ rätt namn
-        };
-
-        const docRef = await addDoc(collection(db, "groups"), imported);
-        setGroups((prev) => [...prev, { id: docRef.id, ...imported }]);
+      if (snapshot.empty) {
+        console.error("Ingen grupp hittad med koden:", code);
+        return;
       }
+
+      const groupDoc = snapshot.docs[0];
+      const groupData = groupDoc.data();
+
+      const members = groupData.members || [];
+      if (!members.includes(user.uid)) {
+        await updateDoc(groupDoc.ref, {
+          members: [...members, user.uid],
+        });
+        console.log("Användaren lades till i gruppens members.");
+      } else {
+        console.log("Användaren är redan medlem i gruppen.");
+      }
+
+      console.log("Grupp importerad:", groupData.name);
     } catch (error) {
       console.error("Fel vid import av grupp:", error.message);
     } finally {
@@ -197,7 +215,7 @@ export const GroupsProvider = ({ children }) => {
     try {
       setLoading(true);
       const groupRef = doc(db, "groups", groupId);
-      await updateDoc(groupRef, { kostnader }); // ✅ rätt namn
+      await updateDoc(groupRef, { kostnader });
 
       setGroups((prev) =>
         prev.map((g) => (g.id === groupId ? { ...g, kostnader } : g))
@@ -224,7 +242,7 @@ export const GroupsProvider = ({ children }) => {
         renameGroup,
         deleteGroup,
         updateProducts,
-        updateKostnader, // ✅ rätt namn
+        updateKostnader,
         calculateTotal,
         loading,
       }}

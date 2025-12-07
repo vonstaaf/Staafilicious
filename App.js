@@ -69,8 +69,8 @@ function MainTabs() {
         tabBarInactiveTintColor: WorkaholicTheme.colors.secondary,
         headerTitle: () => (
           <Image
-            source={require("./assets/logo.png")}
-            style={{ width: 140, height: 50 }}
+            source={require("./assets/icon4.png")}
+            style={{ width: 200, height: 150 }}
             resizeMode="contain"
           />
         ),
