@@ -13,20 +13,29 @@ import {
   getDocs,
 } from "firebase/firestore";
 
-// Hjälpfunktion: alla texter börjar med stor bokstav
 const capitalizeFirst = (text) => {
   if (!text) return "";
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
+
+export const calculateTotal = (items) =>
+  items.reduce(
+    (acc, it) =>
+      acc +
+      (Number(it.purchasePrice) || 0) *
+        (1 + (Number(it.markup) || 0) / 100) *
+        (1 + (Number(it.vat) || 0) / 100) *
+        (Number(it.quantity) || 1),
+    0
+  );
 
 export const GroupsContext = createContext();
 
 export const GroupsProvider = ({ children }) => {
   const [groups, setGroups] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
-  const [loading, setLoading] = useState(false); // 🔑 ny state för laddning
+  const [loading, setLoading] = useState(false);
 
-  // 🔄 Hämta grupper för den inloggade användaren i realtid
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -40,6 +49,11 @@ export const GroupsProvider = ({ children }) => {
           ...doc.data(),
         }));
         setGroups(groupsData);
+
+        if (selectedGroup) {
+          const updatedSel = groupsData.find((g) => g.id === selectedGroup.id);
+          if (updatedSel) setSelectedGroup(updatedSel);
+        }
       },
       (error) => {
         console.error("Fel vid hämtning av grupper:", error.message);
@@ -47,9 +61,8 @@ export const GroupsProvider = ({ children }) => {
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [selectedGroup]);
 
-  // ➕ Skapa ny grupp
   const createGroup = async (name, code) => {
     try {
       const user = auth.currentUser;
@@ -64,9 +77,9 @@ export const GroupsProvider = ({ children }) => {
       const newGroup = {
         name: capitalizeFirst(name),
         code,
-        ownerUid: user.uid, // 🔑 koppla till användaren
+        ownerUid: user.uid,
         products: [],
-        transactions: [],
+        kostnader: [], // ✅ rätt namn
       };
 
       const docRef = await addDoc(collection(db, "groups"), newGroup);
@@ -78,7 +91,6 @@ export const GroupsProvider = ({ children }) => {
     }
   };
 
-  // 📥 Importera grupp via kod
   const importGroup = async (code) => {
     try {
       const user = auth.currentUser;
@@ -105,7 +117,7 @@ export const GroupsProvider = ({ children }) => {
           code,
           ownerUid: user.uid,
           products: [],
-          transactions: [],
+          kostnader: [], // ✅ rätt namn
         };
 
         const docRef = await addDoc(collection(db, "groups"), imported);
@@ -118,7 +130,6 @@ export const GroupsProvider = ({ children }) => {
     }
   };
 
-  // ✏️ Byt namn på grupp
   const renameGroup = async (id, newName) => {
     try {
       if (!newName.trim()) {
@@ -148,7 +159,6 @@ export const GroupsProvider = ({ children }) => {
     }
   };
 
-  // 🗑️ Ta bort grupp
   const deleteGroup = async (id) => {
     try {
       setLoading(true);
@@ -163,7 +173,6 @@ export const GroupsProvider = ({ children }) => {
     }
   };
 
-  // 📦 Uppdatera produkter för vald grupp
   const updateProducts = async (groupId, products) => {
     try {
       setLoading(true);
@@ -173,6 +182,10 @@ export const GroupsProvider = ({ children }) => {
       setGroups((prev) =>
         prev.map((g) => (g.id === groupId ? { ...g, products } : g))
       );
+
+      setSelectedGroup((prevSel) =>
+        prevSel?.id === groupId ? { ...prevSel, products } : prevSel
+      );
     } catch (error) {
       console.error("Fel vid uppdatering av produkter:", error.message);
     } finally {
@@ -180,18 +193,21 @@ export const GroupsProvider = ({ children }) => {
     }
   };
 
-  // 💸 Uppdatera transaktioner för vald grupp
-  const updateTransactions = async (groupId, transactions) => {
+  const updateKostnader = async (groupId, kostnader) => {
     try {
       setLoading(true);
       const groupRef = doc(db, "groups", groupId);
-      await updateDoc(groupRef, { transactions });
+      await updateDoc(groupRef, { kostnader }); // ✅ rätt namn
 
       setGroups((prev) =>
-        prev.map((g) => (g.id === groupId ? { ...g, transactions } : g))
+        prev.map((g) => (g.id === groupId ? { ...g, kostnader } : g))
+      );
+
+      setSelectedGroup((prevSel) =>
+        prevSel?.id === groupId ? { ...prevSel, kostnader } : prevSel
       );
     } catch (error) {
-      console.error("Fel vid uppdatering av transaktioner:", error.message);
+      console.error("Fel vid uppdatering av kostnader:", error.message);
     } finally {
       setLoading(false);
     }
@@ -208,8 +224,9 @@ export const GroupsProvider = ({ children }) => {
         renameGroup,
         deleteGroup,
         updateProducts,
-        updateTransactions,
-        loading, // 🔑 exponera loading state
+        updateKostnader, // ✅ rätt namn
+        calculateTotal,
+        loading,
       }}
     >
       {children}

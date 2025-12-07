@@ -2,6 +2,9 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, Switch, TouchableOpacity, Alert } from "react-native";
 import { WorkaholicTheme } from "../theme";
+import { auth } from "../firebaseConfig";
+import { signOut } from "firebase/auth";
+import Button from "../components/Button";
 
 export default function SettingsScreen({ navigation }) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -15,6 +18,16 @@ export default function SettingsScreen({ navigation }) {
   const toggleDarkMode = (value) => {
     setDarkMode(value);
     Alert.alert("Inställning ändrad", value ? "Mörkt läge aktiverat" : "Mörkt läge avstängt");
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      Alert.alert("Utloggad", "Du är nu utloggad.");
+      // ✅ App.js visar AuthStack automatiskt
+    } catch (error) {
+      Alert.alert("Fel vid utloggning", error.message || "Något gick fel.");
+    }
   };
 
   return (
@@ -55,6 +68,12 @@ export default function SettingsScreen({ navigation }) {
       <View style={styles.card}>
         <Text style={styles.label}>Appinformation</Text>
         <Text style={styles.text}>Version 1.0.0</Text>
+      </View>
+
+      {/* Logga ut */}
+      <View style={styles.card}>
+        <Text style={styles.label}>Konto</Text>
+        <Button title="Logga ut" type="secondary" onPress={handleLogout} />
       </View>
     </View>
   );

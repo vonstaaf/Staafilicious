@@ -16,11 +16,11 @@ import {
 import { auth, db, logAnalyticsEvent } from "../firebaseConfig";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
-import Button from "../components/Button"; // 🔑 Workaholic-knapp
+import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 import { Ionicons } from "@expo/vector-icons";
 
-const { width } = Dimensions.get("window"); // 🔑 hämta skärmbredd
+const { width } = Dimensions.get("window");
 
 export default function RegisterScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -29,7 +29,6 @@ export default function RegisterScreen({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // 🔑 Hantera registrering
   const handleRegister = async () => {
     if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
       Alert.alert("Fel", "Fyll i alla fält.");
@@ -57,7 +56,7 @@ export default function RegisterScreen({ navigation }) {
       logAnalyticsEvent("user_signup", { method: "email" });
 
       Alert.alert("Konto skapat!", "Du är nu registrerad.");
-      navigation.replace("Home"); // ✅ använd replace här
+      // ✅ Ingen navigation här – App.js visar MainStack automatiskt när user är satt
     } catch (error) {
       Alert.alert("Fel vid registrering", error.message || "Något gick fel vid registrering.");
     }
@@ -70,7 +69,6 @@ export default function RegisterScreen({ navigation }) {
     >
       <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
         <View style={styles.container}>
-          {/* 🔑 Responsiv stor logga */}
           <Image
             source={require("../assets/logo.png")}
             style={styles.logo}
@@ -79,7 +77,6 @@ export default function RegisterScreen({ navigation }) {
 
           <Text style={styles.title}>Registrera konto</Text>
 
-          {/* Email */}
           <View style={styles.inputContainer}>
             <TextInput
               placeholder="Email"
@@ -91,7 +88,6 @@ export default function RegisterScreen({ navigation }) {
             />
           </View>
 
-          {/* Lösenord */}
           <View style={styles.inputContainer}>
             <TextInput
               placeholder="Lösenord"
@@ -109,7 +105,6 @@ export default function RegisterScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Bekräfta lösenord */}
           <View style={styles.inputContainer}>
             <TextInput
               placeholder="Bekräfta lösenord"
@@ -127,13 +122,12 @@ export default function RegisterScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Knappar */}
           <View style={styles.buttonContainer}>
             <Button title="Registrera" type="primary" onPress={handleRegister} />
             <Button
               title="Tillbaka till login"
               type="secondary"
-              onPress={() => navigation.navigate("Login")} // ✅ navigate istället för replace
+              onPress={() => navigation.navigate("Login")}
             />
           </View>
         </View>
@@ -150,8 +144,8 @@ const styles = StyleSheet.create({
     backgroundColor: WorkaholicTheme.colors.background,
   },
   logo: {
-    width: width * 0.7,   // 🔑 loggan tar 70% av skärmens bredd
-    height: width * 0.7,  // kvadratisk
+    width: width * 0.7,
+    height: width * 0.7,
     alignSelf: "center",
     marginBottom: 30,
   },
@@ -179,6 +173,6 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     marginTop: 20,
-    gap: 12, // 🔑 ger mellanrum mellan knapparna
+    gap: 12,
   },
 });

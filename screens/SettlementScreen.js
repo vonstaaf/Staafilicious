@@ -1,88 +1,79 @@
-// screens/SettlementScreen.js
+// screens/AvstamningsScreen.js
 import React, { useContext } from "react";
-import { View, Text, Alert, StyleSheet } from "react-native";
-import { GroupsContext } from "../context/GroupsContext";
-import { WorkaholicTheme } from "../theme"; // 🔑 Workaholic färger
+import { View, Text, StyleSheet } from "react-native";
+import { GroupsContext, calculateTotal } from "../context/GroupsContext";
+import { WorkaholicTheme } from "../theme";
 
-// Hjälpfunktion för stor bokstav
-const capitalizeFirst = (text) => {
-  if (!text) return "";
-  return text.charAt(0).toUpperCase() + text.slice(1);
+const formatNumber = (n) => {
+  if (n === null || n === undefined || isNaN(n)) return "0";
+  return parseFloat(Number(n).toFixed(2)).toString();
 };
 
-export default function SettlementScreen() {
+export default function AvstamningsScreen() {
   const { selectedGroup } = useContext(GroupsContext);
 
   if (!selectedGroup) {
-    Alert.alert("Ingen grupp vald", "Gå tillbaka och välj en grupp först.");
     return (
       <View style={styles.container}>
-        <Text style={styles.infoTitle}>Ingen grupp vald</Text>
+        <Text style={styles.infoText}>Ingen grupp vald. Gå tillbaka och välj en grupp.</Text>
       </View>
     );
   }
 
-  // Summera produkter och transaktioner (inklusive kvantitet)
-  const totalProducts = selectedGroup.products?.reduce(
-    (acc, p) => acc + (Number(p.totalPrice) || 0) * (Number(p.quantity) || 1),
+  // 🔑 Summera totalpris för produkter
+  const materialSum = calculateTotal(selectedGroup?.products || []);
+
+  // 🔑 Summera inköpspris för produkter
+  const sumPurchase = (selectedGroup?.products || []).reduce(
+    (acc, it) => acc + (Number(it.purchasePrice) || 0) * (Number(it.quantity) || 1),
     0
   );
 
-  const totalTransactions = selectedGroup.transactions?.reduce(
-    (acc, t) =>
-      acc +
-      (Number(t.amount) || 0) * (Number(t.quantity) || 1) +
-      (Number(t.carCost) || 0) * (Number(t.quantity) || 1),
+  // 🔑 Summera arbetskostnader (timkostnad + bilkostnad)
+  const kostnader = selectedGroup?.kostnader || [];
+  const sumBilkostnad = kostnader.reduce((acc, it) => acc + (Number(it.bilkostnad) || 0), 0);
+  const sumArbetskostnad = kostnader.reduce(
+    (acc, it) => acc + (Number(it.timmar) || 0) * (Number(it.timpris) || 0),
     0
   );
+  const arbetskostnad = sumBilkostnad + sumArbetskostnad;
 
-  // Beräkna avstämning
-  const settlementBalance = totalTransactions - totalProducts;
+  // 🔑 Produktvinst = totalpris - inköpspris
+  const productProfit = materialSum - sumPurchase;
+
+  // 🔑 Total Kostnad = materialkostnad + arbetskostnad
+  const totalKostnad = materialSum + arbetskostnad;
+
+  // 🔑 Total Vinst = produktvinst + arbetskostnad
+  const totalVinst = productProfit + arbetskostnad;
 
   return (
     <View style={styles.container}>
-      {/* Informationsbox */}
       <View style={styles.infoBox}>
-        <Text style={styles.infoTitle}>
-          Grupp: {capitalizeFirst(selectedGroup?.name)} (Kod: {selectedGroup?.code})
-        </Text>
-        <Text style={styles.infoText}>
-          Antal produkter: {selectedGroup.products?.length || 0}
-        </Text>
-        <Text style={styles.infoText}>
-          Antal transaktioner: {selectedGroup.transactions?.length || 0}
-        </Text>
+        <Text style={styles.infoTitle}>Avstämning för grupp: {selectedGroup.name}</Text>
+        <Text style={styles.infoText}>Kod: {selectedGroup.code}</Text>
       </View>
 
-      {/* Summeringar */}
-      <View style={styles.card}>
-        <Text style={styles.label}>
-          Summa produkter: {totalProducts.toFixed(2)} kr
+      <View style={styles.summaryBox}>
+        <Text style={styles.summaryText}>
+          Materialkostnad: {formatNumber(materialSum)} kr
         </Text>
-        <Text style={styles.label}>
-          Summa transaktioner: {totalTransactions.toFixed(2)} kr
+        <Text style={styles.summaryText}>
+          Arbetskostnad: {formatNumber(arbetskostnad)} kr
         </Text>
-      </View>
-
-      {/* Avstämning */}
-      <View
-        style={[
-          styles.settlementBox,
-          {
-            backgroundColor:
-              settlementBalance >= 0
-                ? WorkaholicTheme.colors.success || "#e7ffe7"
-                : WorkaholicTheme.colors.error || "#ffe7e7",
-          },
-        ]}
-      >
-        <Text style={styles.settlementTitle}>
-          Avstämning: {settlementBalance.toFixed(2)} kr
+        <Text style={styles.summaryText}>
+          Produktvinst: {formatNumber(productProfit)} kr
         </Text>
-        <Text style={styles.infoText}>
-          {settlementBalance >= 0
-            ? "Transaktionerna täcker produkterna."
-            : "Produkter kostar mer än transaktionerna."}
+        <Text style={styles.summaryText}>
+          Total Kostnad: {formatNumber(totalKostnad)} kr
+        </Text>
+        <Text
+          style={[
+            styles.summaryText,
+            { color: totalVinst >= 0 ? "lightgreen" : "red" },
+          ]}
+        >
+          Total vinst: {formatNumber(totalVinst)} kr
         </Text>
       </View>
     </View>
@@ -98,7 +89,7 @@ const styles = StyleSheet.create({
   infoBox: {
     backgroundColor: WorkaholicTheme.colors.surface,
     padding: 16,
-    borderRadius: 10,
+    borderRadius: WorkaholicTheme.borderRadius.medium || 10,
     marginBottom: 16,
     shadowColor: "#000",
     shadowOpacity: 0.05,
@@ -115,30 +106,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: WorkaholicTheme.colors.textSecondary,
   },
-  card: {
-    backgroundColor: WorkaholicTheme.colors.surface, // ✅ använd temat
+  summaryBox: {
+    marginTop: 20,
     padding: 16,
-    borderRadius: 10,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: WorkaholicTheme.colors.secondary,
+    borderRadius: WorkaholicTheme.borderRadius.medium || 10,
+    alignItems: "flex-start",
   },
-  label: {
+  summaryText: {
     fontSize: 16,
-    fontWeight: "600",
-    color: WorkaholicTheme.colors.textPrimary,
-    marginBottom: 4,
-  },
-  settlementBox: {
-    padding: 16,
-    borderRadius: 10,
-  },
-  settlementTitle: {
-    fontSize: 18,
     fontWeight: "700",
-    color: WorkaholicTheme.colors.textPrimary,
+    color: "#fff",
     marginBottom: 6,
   },
 });

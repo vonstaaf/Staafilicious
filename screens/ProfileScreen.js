@@ -1,20 +1,26 @@
-// screens/ProfileScreen.js
 import React, { useState } from "react";
-import { View, Text, TextInput, StyleSheet, Alert, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  Alert,
+  TouchableOpacity,
+} from "react-native";
 import { WorkaholicTheme } from "../theme";
 import Button from "../components/Button";
 import { auth } from "../firebaseConfig";
-import { updatePassword, updateProfile } from "firebase/auth";
-import { Ionicons } from "@expo/vector-icons"; // 🔑 ikonbibliotek
+import { updatePassword, updateProfile, signOut } from "firebase/auth";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function ProfileScreen() {
   const user = auth.currentUser;
   const [email] = useState(user?.email || "");
   const [displayName, setDisplayName] = useState(user?.displayName || "");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  // 🔑 Spara ändringar i profil
   const handleSave = async () => {
     try {
       if (displayName.trim() && displayName !== user?.displayName) {
@@ -26,7 +32,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // 🔑 Ändra lösenord
   const handlePasswordChange = async () => {
     if (!newPassword.trim()) {
       Alert.alert("Fel", "Ange ett nytt lösenord.");
@@ -36,12 +41,26 @@ export default function ProfileScreen() {
       Alert.alert("Fel", "Lösenordet måste vara minst 6 tecken.");
       return;
     }
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Fel", "Lösenorden matchar inte.");
+      return;
+    }
     try {
       await updatePassword(user, newPassword);
       Alert.alert("Lösenord ändrat", "Ditt lösenord har uppdaterats.");
       setNewPassword("");
+      setConfirmPassword("");
     } catch (error) {
       Alert.alert("Fel vid lösenordsändring", error.message || "Något gick fel.");
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      Alert.alert("Utloggad", "Du är nu utloggad.");
+    } catch (error) {
+      Alert.alert("Fel vid utloggning", error.message || "Något gick fel.");
     }
   };
 
@@ -69,24 +88,51 @@ export default function ProfileScreen() {
 
       {/* Byt lösenord */}
       <Text style={styles.subtitle}>Byt lösenord</Text>
-      <View style={styles.passwordContainer}>
+
+      {/* Nytt lösenord */}
+      <View style={styles.passwordWrapper}>
         <TextInput
           placeholder="Nytt lösenord"
           value={newPassword}
           onChangeText={setNewPassword}
           secureTextEntry={!showPassword}
-          style={[styles.input, { flex: 1, marginBottom: 0 }]}
+          style={styles.input}
         />
-        <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+        <TouchableOpacity
+          onPress={() => setShowPassword(!showPassword)}
+          style={styles.eyeIcon}
+        >
           <Ionicons
             name={showPassword ? "eye-off-outline" : "eye-outline"}
-            size={24}
+            size={22}
+            color={WorkaholicTheme.colors.secondary}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* Bekräfta lösenord */}
+      <View style={styles.passwordWrapper}>
+        <TextInput
+          placeholder="Bekräfta lösenord"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          secureTextEntry={!showPassword}
+          style={styles.input}
+        />
+        <TouchableOpacity
+          onPress={() => setShowPassword(!showPassword)}
+          style={styles.eyeIcon}
+        >
+          <Ionicons
+            name={showPassword ? "eye-off-outline" : "eye-outline"}
+            size={22}
             color={WorkaholicTheme.colors.secondary}
           />
         </TouchableOpacity>
       </View>
 
       <Button title="Ändra lösenord" type="secondary" onPress={handlePasswordChange} />
+      <Button title="Logga ut" type="secondary" onPress={handleLogout} />
     </View>
   );
 }
@@ -114,20 +160,20 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: WorkaholicTheme.colors.secondary,
-    padding: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     marginBottom: 12,
     borderRadius: WorkaholicTheme.borderRadius.medium || 8,
     backgroundColor: WorkaholicTheme.colors.surface,
     color: WorkaholicTheme.colors.textPrimary,
   },
-  passwordContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: WorkaholicTheme.colors.secondary,
-    borderRadius: WorkaholicTheme.borderRadius.medium || 8,
-    backgroundColor: WorkaholicTheme.colors.surface,
-    paddingHorizontal: 10,
+  passwordWrapper: {
+    position: "relative",
     marginBottom: 12,
+  },
+  eyeIcon: {
+    position: "absolute",
+    right: 12,
+    top: 10,
   },
 });

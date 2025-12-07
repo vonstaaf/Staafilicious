@@ -1,5 +1,5 @@
 // screens/HomeScreen.js
-import React, { useContext, useState, useEffect } from "react";
+import React, { useContext, useState } from "react";
 import {
   View,
   Text,
@@ -14,17 +14,15 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { GroupsContext } from "../context/GroupsContext";
 import { auth } from "../firebaseConfig";
-import { signOut, onAuthStateChanged } from "firebase/auth";
-import Button from "../components/Button"; // 🔑 Workaholic-knapp
-import { WorkaholicTheme } from "../theme"; // 🔑 importera temat
+import { signOut } from "firebase/auth";
+import Button from "../components/Button";
+import { WorkaholicTheme } from "../theme";
 
-// Hjälpfunktion för stor bokstav
 const capitalizeFirst = (text) => {
   if (!text) return "";
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
-// Generera gruppkod
 const generateGroupCode = (length = 8) => {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let code = "";
@@ -34,7 +32,7 @@ const generateGroupCode = (length = 8) => {
   return code;
 };
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen() {
   const {
     groups,
     selectedGroup,
@@ -52,40 +50,15 @@ export default function HomeScreen({ navigation }) {
   const [activeGroup, setActiveGroup] = useState(null);
   const [newName, setNewName] = useState("");
 
-  // 🔑 Kontrollera om användaren är inloggad
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        navigation.navigate("Login"); // ✅ byt från replace → navigate
-      }
-    });
-    return unsubscribe;
-  }, []);
-
-  // 🔑 Logout-funktion
   const handleLogout = async () => {
     try {
       await signOut(auth);
       Alert.alert("Utloggad", "Du är nu utloggad.");
-      // ✅ räcker med signOut, App.js hanterar navigationen
     } catch (error) {
       Alert.alert("Fel vid utloggning", error.message || "Något gick fel.");
     }
   };
 
-  // Header med vald grupp + logout-knapp
-  const Header = () => (
-    <View style={styles.header}>
-      <Text style={styles.headerText}>
-        {selectedGroup
-          ? `Grupp: ${capitalizeFirst(selectedGroup.name)} (Kod: ${selectedGroup.code})`
-          : "Ingen grupp vald"}
-      </Text>
-      <Button title="Logga ut" type="secondary" onPress={handleLogout} />
-    </View>
-  );
-
-  // Skapa grupp
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
       Alert.alert("Fel", "Ange ett gruppnamn.");
@@ -94,10 +67,12 @@ export default function HomeScreen({ navigation }) {
     const code = generateGroupCode(8);
     await createGroup(capitalizeFirst(groupName.trim()), code);
     setGroupName("");
-    Alert.alert("Grupp skapad", `Gruppen "${capitalizeFirst(groupName)}" har skapats med kod: ${code}`);
+    Alert.alert(
+      "Grupp skapad",
+      `Gruppen "${capitalizeFirst(groupName)}" har skapats med kod: ${code}`
+    );
   };
 
-  // Importera grupp via kod
   const handleImportGroup = async () => {
     if (!groupCode.trim()) {
       Alert.alert("Fel", "Ange en gruppkod.");
@@ -105,9 +80,12 @@ export default function HomeScreen({ navigation }) {
     }
     await importGroup(groupCode.trim().toUpperCase());
     setGroupCode("");
-    Alert.alert("Grupp importerad", `Grupp med kod ${groupCode.trim().toUpperCase()} har importerats.`);
+    Alert.alert(
+      "Grupp importerad",
+      `Grupp med kod ${groupCode.trim().toUpperCase()} har importerats.`
+    );
   };
-    // Öppna meny
+
   const openMenu = (group) => {
     setActiveGroup(group);
     setMenuVisible(true);
@@ -167,7 +145,23 @@ export default function HomeScreen({ navigation }) {
     Alert.alert("Grupp uppdaterad", "Gruppnamnet har ändrats.");
   };
 
-  return (
+  // ✅ Header med gruppnamn och kod på separata rader
+  const Header = () => (
+    <View style={styles.infoBox}>
+      {selectedGroup ? (
+        <View>
+          <Text style={styles.infoTitle}>Grupp: {capitalizeFirst(selectedGroup.name)}</Text>
+          <Text style={styles.infoText}>Kod: {selectedGroup.code}</Text>
+        </View>
+      ) : (
+        <Text style={styles.infoTitle}>Ingen grupp vald</Text>
+      )}
+      <View style={styles.logoutButton}>
+        <Button title="Logga ut" type="secondary" onPress={handleLogout} />
+      </View>
+    </View>
+  );
+    return (
     <View style={styles.container}>
       <Header />
 
@@ -200,7 +194,7 @@ export default function HomeScreen({ navigation }) {
             </Text>
           </TouchableOpacity>
         )}
-        ListEmptyComponent={<Text style={styles.groupText}>Inga grupper ännu</Text>} // ✅ tomvy
+        ListEmptyComponent={<Text style={styles.groupText}>Inga grupper ännu</Text>}
       />
 
       {/* Gruppmeny */}
@@ -245,16 +239,29 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: WorkaholicTheme.colors.background,
   },
-  header: {
-    paddingVertical: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 20,
+  infoBox: {
+    backgroundColor: WorkaholicTheme.colors.surface,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  headerText: {
+  infoTitle: {
     fontSize: 20,
     fontWeight: "600",
     color: WorkaholicTheme.colors.textPrimary,
+  },
+  infoText: {
+    fontSize: 18,
+    color: WorkaholicTheme.colors.textSecondary,
+    marginTop: 4,
+  },
+  logoutButton: {
+    marginTop: 12,
+    alignSelf: "flex-start",
   },
   input: {
     borderWidth: 1,
@@ -266,13 +273,20 @@ const styles = StyleSheet.create({
     color: WorkaholicTheme.colors.textPrimary,
   },
   groupItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderColor: WorkaholicTheme.colors.secondary,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    marginBottom: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
   },
   groupText: {
     fontSize: 16,
     color: WorkaholicTheme.colors.textPrimary,
+    textAlign: "center",
   },
   modalContainer: {
     flex: 1,
@@ -283,7 +297,7 @@ const styles = StyleSheet.create({
     margin: 20,
     padding: 20,
     backgroundColor: WorkaholicTheme.colors.surface,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   modalTitle: {
     fontSize: 18,

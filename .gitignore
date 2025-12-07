@@ -39,3 +39,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Firebase config file (ska inte checkas in)
+google-services.json
+
+# Credentials och secrets
+credentials.json
+Sensitive Keystore information.txt

@@ -1,27 +1,29 @@
-// App.js
 import React, { useEffect, useState } from "react";
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { GroupsProvider } from "./context/GroupsContext";
+import { BadgeProvider, useBadges } from "./context/BadgeContext";
 import { WorkaholicTheme } from "./theme";
 
 import LoginScreen from "./screens/LoginScreen";
 import RegisterScreen from "./screens/RegisterScreen";
 import HomeScreen from "./screens/HomeScreen";
 import ProductsScreen from "./screens/ProductsScreen";
-import TransactionsScreen from "./screens/TransactionsScreen";
+import KostnadsScreen from "./screens/KostnaderScreen";
 import SettlementScreen from "./screens/SettlementScreen";
 import LoadingScreen from "./screens/LoadingScreen";
-import SettingsScreen from "./screens/SettingsScreen"; // 🔑 inställningar
-import ProfileScreen from "./screens/ProfileScreen";   // 🔑 profil
+import SettingsScreen from "./screens/SettingsScreen";
+import ProfileScreen from "./screens/ProfileScreen";
 
 import { auth } from "./firebaseConfig";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 
-import { Image, TouchableOpacity } from "react-native";
-import { Ionicons } from "@expo/vector-icons"; // 🔑 vector‑ikoner
+import { Image, TouchableOpacity, View, Text } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
 
 // 🔑 Anpassa NavigationContainer med WorkaholicTheme
 const navigationTheme = {
@@ -37,11 +39,156 @@ const navigationTheme = {
   },
 };
 
+// 🔑 AuthStack (Login/Register)
+function AuthStack() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="Login" component={LoginScreen} options={{ title: "Logga in" }} />
+      <Stack.Screen name="Register" component={RegisterScreen} options={{ title: "Registrera" }} />
+    </Stack.Navigator>
+  );
+}
+
+// 🔑 Tabs för huvudflödet
+function MainTabs() {
+  const { KostnadsCount, productsCount, notificationsCount } = useBadges();
+
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ color, size }) => {
+          let iconName;
+          if (route.name === "Home") iconName = "home-outline";
+          else if (route.name === "Products") iconName = "cube-outline";
+          else if (route.name === "Kostnads") iconName = "swap-horizontal-outline";
+          else if (route.name === "Profile") iconName = "person-outline";
+          else if (route.name === "Settlement") iconName = "cash-outline";
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: WorkaholicTheme.colors.primary,
+        tabBarInactiveTintColor: WorkaholicTheme.colors.secondary,
+        headerTitle: () => (
+          <Image
+            source={require("./assets/logo.png")}
+            style={{ width: 140, height: 50 }}
+            resizeMode="contain"
+          />
+        ),
+        headerTitleAlign: "center",
+        headerStyle: { backgroundColor: WorkaholicTheme.colors.primary },
+        headerTintColor: "#FFFFFF",
+      })}
+    >
+      <Tab.Screen name="Home" component={HomeScreen} options={{ title: "Hem" }} />
+      <Tab.Screen
+        name="Products"
+        component={ProductsScreen}
+        options={{
+          title: "Produkter",
+          tabBarBadge: productsCount > 0 ? productsCount : null,
+        }}
+      />
+      <Tab.Screen
+        name="Kostnads"
+        component={KostnadsScreen}
+        options={{
+          title: "Kostnader",
+          tabBarBadge: KostnadsCount > 0 ? KostnadsCount : null,
+        }}
+      />
+      <Tab.Screen
+        name="Settlement"
+        component={SettlementScreen}
+        options={{ title: "Avstämning" }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          title: "Profil",
+          tabBarBadge: notificationsCount > 0 ? notificationsCount : null,
+        }}
+      />
+    </Tab.Navigator>
+  );
+}
+
+// 🔑 MainStack (Tabs + extra skärmar ovanpå)
+function MainStack({ user }) {
+  const { notificationsCount } = useBadges();
+
+  return (
+    <Stack.Navigator
+      screenOptions={({ navigation }) => ({
+        headerTitle: () => (
+          <Image
+            source={require("./assets/logo.png")}
+            style={{ width: 140, height: 50 }}
+            resizeMode="contain"
+          />
+        ),
+        headerTitleAlign: "center",
+        headerStyle: {
+          backgroundColor: WorkaholicTheme.colors.primary,
+        },
+        headerTintColor: "#FFFFFF",
+
+        headerLeft: () =>
+          user ? (
+            <TouchableOpacity
+              onPress={() => navigation.navigate("Settings")}
+              style={{ marginLeft: 15 }}
+            >
+              <Ionicons name="settings-outline" size={28} color="#FFFFFF" />
+              {notificationsCount > 0 && (
+                <View
+                  style={{
+                    position: "absolute",
+                    right: -6,
+                    top: -3,
+                    backgroundColor: WorkaholicTheme.colors.error,
+                    borderRadius: 8,
+                    width: 16,
+                    height: 16,
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: "white", fontSize: 10 }}>
+                    {notificationsCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ) : null,
+
+        headerRight: () =>
+          user ? (
+            <TouchableOpacity
+              onPress={async () => {
+                try {
+                  await signOut(auth); // 🔑 loggar ut och visar AuthStack
+                } catch (error) {
+                  console.log("Logout error:", error.message);
+                }
+              }}
+              style={{ marginRight: 15 }}
+            >
+              <Ionicons name="log-out-outline" size={28} color="#FFFFFF" />
+            </TouchableOpacity>
+          ) : null,
+      })}
+    >
+      <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: "Inställningar" }} />
+    </Stack.Navigator>
+  );
+}
+
 export default function App() {
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState(null);
 
-  // 🔑 Lyssna på auth‑state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (usr) => {
       setUser(usr);
@@ -56,100 +203,11 @@ export default function App() {
 
   return (
     <GroupsProvider>
-      <NavigationContainer theme={navigationTheme}>
-        <Stack.Navigator
-          screenOptions={({ navigation }) => ({
-            headerTitle: () => (
-              <Image
-                source={require("./assets/logo.png")} // 🔑 global logo
-                style={{ width: 140, height: 50 }}
-                resizeMode="contain"
-              />
-            ),
-            headerTitleAlign: "center",
-            headerStyle: {
-              backgroundColor: WorkaholicTheme.colors.primary, // Workaholic primärfärg
-            },
-            headerTintColor: "#FFFFFF", // text/ikoner i vitt
-
-            // 🔑 Settings‑ikon till vänster
-            headerLeft: () =>
-              user ? (
-                <TouchableOpacity
-                  onPress={() => navigation.navigate("Settings")}
-                  style={{ marginLeft: 15 }}
-                >
-                  <Ionicons name="settings-outline" size={28} color="#FFFFFF" />
-                </TouchableOpacity>
-              ) : null,
-
-            // 🔑 Logout‑ikon till höger
-            headerRight: () =>
-              user ? (
-                <TouchableOpacity
-                  onPress={async () => {
-                    try {
-                      await signOut(auth);
-                    } catch (error) {
-                      console.log("Logout error:", error.message);
-                    }
-                  }}
-                  style={{ marginRight: 15 }}
-                >
-                  <Ionicons name="log-out-outline" size={28} color="#FFFFFF" />
-                </TouchableOpacity>
-              ) : null,
-          })}
-        >
-          {user ? (
-            <>
-              <Stack.Screen
-                name="Home"
-                component={HomeScreen}
-                options={{ title: "Hem" }}
-              />
-              <Stack.Screen
-                name="Products"
-                component={ProductsScreen}
-                options={{ title: "Produkter" }}
-              />
-              <Stack.Screen
-                name="Transactions"
-                component={TransactionsScreen}
-                options={{ title: "Transaktioner" }}
-              />
-              <Stack.Screen
-                name="Settlement"
-                component={SettlementScreen}
-                options={{ title: "Avstämning" }}
-              />
-              <Stack.Screen
-                name="Settings"
-                component={SettingsScreen}
-                options={{ title: "Inställningar" }}
-              />
-              <Stack.Screen
-                name="Profile"
-                component={ProfileScreen}
-                options={{ title: "Profil" }}
-              />
-            </>
-          ) : (
-            <>
-              <Stack.Screen
-                name="Login"
-                component={LoginScreen}
-                options={{ title: "Logga in" }}
-              />
-              <Stack.Screen
-                name="Register"
-                component={RegisterScreen}
-                options={{ title: "Registrera" }}
-              />
-            </>
-          )}
-        </Stack.Navigator>
-      </NavigationContainer>
+      <BadgeProvider>
+        <NavigationContainer theme={navigationTheme}>
+          {user ? <MainStack user={user} /> : <AuthStack />}
+        </NavigationContainer>
+      </BadgeProvider>
     </GroupsProvider>
   );
 }

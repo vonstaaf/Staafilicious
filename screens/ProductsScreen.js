@@ -1,4 +1,5 @@
 // screens/ProductsScreen.js
+import InfoBox from "../components/InfoBox";
 import React, { useContext, useEffect, useState } from "react";
 import {
   View,
@@ -7,14 +8,15 @@ import {
   FlatList,
   Alert,
   StyleSheet,
+  TouchableOpacity,
 } from "react-native";
 import { GroupsContext } from "../context/GroupsContext";
-import Button from "../components/Button"; // 🔑 Workaholic-knapp
-import { WorkaholicTheme } from "../theme"; // 🔑 Workaholic färger
+import Button from "../components/Button";
+import { WorkaholicTheme } from "../theme";
 
 // Hjälpfunktioner
 const formatNumber = (n) => {
-  if (n === null || n === undefined || isNaN(n)) return "";
+  if (n === null || n === undefined || isNaN(n)) return "0";
   return parseFloat(Number(n).toFixed(2)).toString();
 };
 
@@ -29,7 +31,11 @@ const capitalizeFirst = (text) => {
   if (!text) return "";
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
-const numericOnly = (text) => text.replace(/[^0-9]/g, "");
+
+const numericOnly = (text) => {
+  if (!text) return "";
+  return text.replace(/[^0-9]/g, "");
+};
 
 export default function ProductsScreen() {
   const { selectedGroup, updateProducts } = useContext(GroupsContext);
@@ -40,8 +46,9 @@ export default function ProductsScreen() {
     purchasePrice: "",
     markup: "",
     vat: "",
-    quantity: "",
+    quantity: "1",
   });
+  const [editingIndex, setEditingIndex] = useState(null);
 
   useEffect(() => {
     if (!selectedGroup) {
@@ -51,42 +58,19 @@ export default function ProductsScreen() {
     setProducts(selectedGroup?.products || []);
   }, [selectedGroup]);
 
-  const updateRowField = (index, field, value) => {
-    const updated = [...products];
-    updated[index] = {
-      ...updated[index],
-      [field]:
-        ["purchasePrice", "markup", "vat", "quantity"].includes(field)
-          ? Number(value)
-          : value,
-    };
-    if (["purchasePrice", "markup", "vat"].includes(field)) {
-      updated[index].totalPrice = computeTotal(
-        updated[index].purchasePrice,
-        updated[index].markup,
-        updated[index].vat
-      );
-    }
-    setProducts(updated);
-  };
-
-  const saveRow = async () => {
-    if (!selectedGroup) return;
-    await updateProducts(selectedGroup.id, products);
-    Alert.alert("Sparat", "Produkter har uppdaterats.");
-  };
-
   const addProduct = async () => {
     if (!selectedGroup) return;
     if (!newRow.name.trim() || !newRow.eNumber.trim()) {
       Alert.alert("Fel", "Ange både produktnamn och E‑nummer.");
       return;
     }
+
     const p = Number(newRow.purchasePrice) || 0;
     const m = Number(newRow.markup) || 0;
     const v = Number(newRow.vat) || 0;
     const q = Number(newRow.quantity) || 1;
     const total = computeTotal(p, m, v);
+
     const newItem = {
       name: capitalizeFirst(newRow.name.trim()),
       eNumber: numericOnly(newRow.eNumber.trim()),
@@ -96,284 +80,247 @@ export default function ProductsScreen() {
       quantity: q,
       totalPrice: total,
     };
-    const updated = [...products, newItem];
+
+    let updated;
+    if (editingIndex !== null) {
+      updated = [...products];
+      updated[editingIndex] = newItem;
+      setEditingIndex(null);
+      Alert.alert("Ändrad", `${newItem.name} har uppdaterats.`);
+    } else {
+      updated = [...products, newItem];
+      Alert.alert("Produkt tillagd", `${newItem.name} har lagts till.`);
+    }
+
     setProducts(updated);
     await updateProducts(selectedGroup.id, updated);
+
     setNewRow({
       name: "",
       eNumber: "",
       purchasePrice: "",
       markup: "",
       vat: "",
-      quantity: "",
+      quantity: "1",
     });
-    Alert.alert("Produkt tillagd", `${newItem.name} har lagts till.`);
   };
-    // Summeringar tar hänsyn till antal
+
+  const deleteProduct = async (index) => {
+    const updated = products.filter((_, i) => i !== index);
+    setProducts(updated);
+    await updateProducts(selectedGroup.id, updated);
+    Alert.alert("Raderad", "Produkten har tagits bort.");
+  };
+
+  const editProduct = (item, index) => {
+    setNewRow({
+      name: item.name,
+      eNumber: String(item.eNumber),
+      purchasePrice: String(item.purchasePrice),
+      markup: String(item.markup),
+      vat: String(item.vat),
+      quantity: String(item.quantity),
+    });
+    setEditingIndex(index);
+  };
+
   const sumPurchase = products.reduce(
-    (acc, it) =>
-      acc + (Number(it.purchasePrice) || 0) * (Number(it.quantity) || 1),
-    0
-  );
-  const sumTotal = products.reduce(
-    (acc, it) =>
-      acc + (Number(it.totalPrice) || 0) * (Number(it.quantity) || 1),
+    (acc, it) => acc + (Number(it.purchasePrice) || 0) * (Number(it.quantity) || 1),
     0
   );
 
-  return (
+  const sumTotal = products.reduce(
+    (acc, it) => acc + (Number(it.totalPrice) || 0) * (Number(it.quantity) || 1),
+    0
+  );
+
+  // ✅ Differens mellan totalpris och inköpspris
+  const diffPurchaseVsTotal = sumTotal - sumPurchase;
+    return (
     <View style={styles.container}>
       {/* Informationsbox ovanför listan */}
-      <View style={styles.infoBox}>
-        <Text style={styles.infoTitle}>
-          Grupp: {selectedGroup?.name} (Kod: {selectedGroup?.code})
-        </Text>
-        <Text style={styles.infoText}>Antal produkter: {products.length}</Text>
-        <Text style={styles.infoText}>
-          Summa inköpspris: {formatNumber(sumPurchase)} kr
-        </Text>
-        <Text style={styles.infoText}>
-          Summa totalpris: {formatNumber(sumTotal)} kr
-        </Text>
+      <InfoBox
+        title={`Grupp: ${selectedGroup?.name} (Kod: ${selectedGroup?.code})`}
+        items={[
+          `Antal produkter: ${products.length}`,
+          `Summa inköpspris: ${formatNumber(sumPurchase)} kr`,
+          `Summa totalpris: ${formatNumber(sumTotal)} kr`,
+          `Vinst: ${formatNumber(diffPurchaseVsTotal)} kr`,
+        ]}
+      />
+
+      {/* Inmatningsraden */}
+      <View style={styles.card}>
+        <View style={styles.row}>
+          <View style={styles.flexItem}>
+            <Text style={styles.label}>Produktnamn</Text>
+            <TextInput
+              value={newRow.name}
+              onChangeText={(v) => setNewRow((s) => ({ ...s, name: capitalizeFirst(v) }))}
+              style={styles.input}
+              placeholder="t.ex. 2-Vägs uttag"
+            />
+          </View>
+          <View style={styles.flexItem}>
+            <Text style={styles.label}>E‑nummer</Text>
+            <TextInput
+              value={newRow.eNumber}
+              onChangeText={(v) => setNewRow((s) => ({ ...s, eNumber: numericOnly(v) }))}
+              keyboardType="numeric"
+              style={styles.input}
+              placeholder="t.ex. 4999998"
+            />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.flexItem}>
+            <Text style={styles.label}>Antal</Text>
+            <TextInput
+              value={newRow.quantity}
+              onChangeText={(v) => setNewRow((s) => ({ ...s, quantity: numericOnly(v) }))}
+              keyboardType="numeric"
+              style={styles.input}
+              placeholder="t.ex. 5"
+            />
+          </View>
+          <View style={styles.flexItem}>
+            <Text style={styles.label}>Inköpspris</Text>
+            <TextInput
+              value={newRow.purchasePrice}
+              onChangeText={(v) => setNewRow((s) => ({ ...s, purchasePrice: numericOnly(v) }))}
+              keyboardType="numeric"
+              style={styles.input}
+              placeholder="t.ex. 250"
+            />
+          </View>
+          <View style={styles.flexItem}>
+            <Text style={styles.label}>Påslag (%)</Text>
+            <TextInput
+              value={newRow.markup}
+              onChangeText={(v) => setNewRow((s) => ({ ...s, markup: numericOnly(v) }))}
+              keyboardType="numeric"
+              style={styles.input}
+              placeholder="t.ex. 25"
+            />
+          </View>
+          <View style={styles.flexItem}>
+            <Text style={styles.label}>Moms (%)</Text>
+            <TextInput
+              value={newRow.vat}
+              onChangeText={(v) => setNewRow((s) => ({ ...s, vat: numericOnly(v) }))}
+              keyboardType="numeric"
+              style={styles.input}
+              placeholder="t.ex. 25"
+            />
+          </View>
+        </View>
+
+        <Button
+          title={editingIndex !== null ? "Spara ändring" : "Lägg till produkt"}
+          type="primary"
+          onPress={addProduct}
+        />
       </View>
 
-      {/* Lista produkter */}
+      {/* Rubrikrad */}
       <FlatList
         data={products}
         keyExtractor={(item, i) => item.eNumber || i.toString()}
+        ListHeaderComponent={
+          <View style={styles.slimRowHeader}>
+            <Text style={styles.slimHeader}>Produktnamn</Text>
+            <Text style={styles.slimHeader}>E‑nummer</Text>
+            <Text style={styles.slimHeader}>Antal</Text>
+            <Text style={styles.slimHeader}>Inköpspris</Text>
+            <Text style={styles.slimHeader}>Påslag %</Text>
+            <Text style={styles.slimHeader}>Moms %</Text>
+            <Text style={styles.slimHeader}></Text>
+          </View>
+        }
+        stickyHeaderIndices={[0]}
         renderItem={({ item, index }) => (
-          <View style={styles.card}>
-            {/* Rad 1 */}
-            <View style={{ flexDirection: "row", marginBottom: 8 }}>
-              <View style={{ flex: 2, marginRight: 8 }}>
-                <Text style={styles.label}>Produktnamn</Text>
-                <TextInput
-                  value={item.name}
-                  onChangeText={(v) =>
-                    updateRowField(index, "name", capitalizeFirst(v))
-                  }
-                  onEndEditing={saveRow}
-                  style={styles.input}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>E-nummer</Text>
-                <TextInput
-                  value={item.eNumber}
-                  onChangeText={(v) =>
-                    updateRowField(index, "eNumber", numericOnly(v))
-                  }
-                  onEndEditing={saveRow}
-                  keyboardType="numeric"
-                  style={styles.input}
-                />
-              </View>
-            </View>
+          <View style={styles.slimRow}>
+            <Text style={styles.slimText}>{item.name}</Text>
+            <Text style={styles.slimText}>{item.eNumber}</Text>
+            <Text style={styles.slimText}>{item.quantity}</Text>
+            <Text style={styles.slimText}>{item.purchasePrice} kr</Text>
+            <Text style={styles.slimText}>{item.markup} %</Text>
+            <Text style={styles.slimText}>{item.vat} %</Text>
 
-            {/* Rad 2 */}
-            <View style={{ flexDirection: "row" }}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.label}>Antal</Text>
-                <TextInput
-                  value={String(item.quantity || 1)}
-                  onChangeText={(v) =>
-                    updateRowField(index, "quantity", numericOnly(v))
-                  }
-                  onEndEditing={saveRow}
-                  keyboardType="numeric"
-                  style={styles.input}
-                />
-              </View>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.label}>Inköpspris (kr)</Text>
-                <TextInput
-                  value={formatNumber(item.purchasePrice)}
-                  onChangeText={(v) =>
-                    updateRowField(index, "purchasePrice", numericOnly(v))
-                  }
-                  onEndEditing={saveRow}
-                  keyboardType="numeric"
-                  style={styles.input}
-                />
-              </View>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.label}>Påslag (%)</Text>
-                <TextInput
-                  value={formatNumber(item.markup)}
-                  onChangeText={(v) =>
-                    updateRowField(index, "markup", numericOnly(v))
-                  }
-                  onEndEditing={saveRow}
-                  keyboardType="numeric"
-                  style={styles.input}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Moms (%)</Text>
-                <TextInput
-                  value={formatNumber(item.vat)}
-                  onChangeText={(v) =>
-                    updateRowField(index, "vat", numericOnly(v))
-                  }
-                  onEndEditing={saveRow}
-                  keyboardType="numeric"
-                  style={styles.input}
-                />
-              </View>
+            <View style={styles.iconContainer}>
+              <TouchableOpacity onPress={() => editProduct(item, index)} style={styles.iconButton}>
+                <Text style={styles.icon}>✏️</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => deleteProduct(index)} style={styles.iconButton}>
+                <Text style={styles.icon}>🗑️</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
-        ListFooterComponent={
-          <View style={{ marginTop: 12 }}>
-            {/* Ny rad för inmatning */}
-            <View style={styles.card}>
-              <View style={{ flexDirection: "row", marginBottom: 8 }}>
-                <View style={{ flex: 2, marginRight: 8 }}>
-                  <Text style={styles.label}>Produktnamn</Text>
-                  <TextInput
-                    value={newRow.name}
-                    onChangeText={(v) =>
-                      setNewRow((s) => ({ ...s, name: capitalizeFirst(v) }))
-                    }
-                    style={styles.input}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>E-nummer</Text>
-                  <TextInput
-                    value={newRow.eNumber}
-                    onChangeText={(v) =>
-                      setNewRow((s) => ({ ...s, eNumber: numericOnly(v) }))
-                    }
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-              </View>
-                            <View style={{ flexDirection: "row" }}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.label}>Antal</Text>
-                  <TextInput
-                    value={newRow.quantity}
-                    onChangeText={(v) =>
-                      setNewRow((s) => ({ ...s, quantity: numericOnly(v) }))
-                    }
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.label}>Inköpspris (kr)</Text>
-                  <TextInput
-                    value={newRow.purchasePrice}
-                    onChangeText={(v) =>
-                      setNewRow((s) => ({ ...s, purchasePrice: numericOnly(v) }))
-                    }
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.label}>Påslag (%)</Text>
-                  <TextInput
-                    value={newRow.markup}
-                    onChangeText={(v) =>
-                      setNewRow((s) => ({ ...s, markup: numericOnly(v) }))
-                    }
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Moms (%)</Text>
-                  <TextInput
-                    value={newRow.vat}
-                    onChangeText={(v) =>
-                      setNewRow((s) => ({ ...s, vat: numericOnly(v) }))
-                    }
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-              </View>
-            </View>
-
-            <Button title="Lägg till produkt" type="primary" onPress={addProduct} />
-
-            {/* Summeringsbox längst ner */}
-            <View style={styles.summaryBox}>
-              <Text style={styles.summaryText}>
-                Summa inköpspris: {formatNumber(sumPurchase)} kr
-              </Text>
-              <Text style={styles.summaryText}>
-                Summa totalpris: {formatNumber(sumTotal)} kr
-              </Text>
-            </View>
-          </View>
-        }
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: WorkaholicTheme.colors.background,
-  },
-  infoBox: {
-    backgroundColor: WorkaholicTheme.colors.surface,
-    padding: 16,
-    borderRadius: WorkaholicTheme.borderRadius.medium || 10,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: WorkaholicTheme.colors.textPrimary,
-    marginBottom: 6,
-  },
-  infoText: {
-    fontSize: 16,
-    color: WorkaholicTheme.colors.textSecondary,
-  },
+  container: { flex: 1, padding: 20, backgroundColor: WorkaholicTheme.colors.background },
+
   card: {
     backgroundColor: WorkaholicTheme.colors.surface,
-    borderRadius: WorkaholicTheme.borderRadius.medium || 10,
-    padding: 12,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  label: {
-    fontWeight: "600",
-    color: WorkaholicTheme.colors.textPrimary,
-    marginBottom: 4,
-  },
-  input: {
-    borderBottomWidth: 1,
-    borderColor: WorkaholicTheme.colors.secondary,
-    textAlign: "left",
-    paddingVertical: 4,
-    color: WorkaholicTheme.colors.textPrimary,
-  },
-  summaryBox: {
-    marginTop: 20,
+    borderRadius: 12,
     padding: 16,
-    backgroundColor: WorkaholicTheme.colors.secondary,
-    borderRadius: WorkaholicTheme.borderRadius.medium || 10,
-    alignItems: "flex-start",
+    marginBottom: 16,
   },
-  summaryText: {
-    fontSize: 16,
+  row: { flexDirection: "row", justifyContent: "space-between", gap: 12, marginBottom: 12 },
+  flexItem: { flex: 1 },
+  label: { fontWeight: "600", color: WorkaholicTheme.colors.textPrimary, marginBottom: 4 },
+  input: {
+    borderWidth: 1,
+    borderColor: WorkaholicTheme.colors.secondary,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: "#fff",
+    color: WorkaholicTheme.colors.textPrimary,
+  },
+
+  slimRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderColor: "#ddd",
+  },
+  slimText: { fontSize: 14, color: WorkaholicTheme.colors.textPrimary, flex: 1, textAlign: "center" },
+
+  slimRowHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+    borderBottomWidth: 2,
+    borderColor: "#aaa",
+    backgroundColor: "#f7f7f7",
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  slimHeader: {
+    fontSize: 14,
     fontWeight: "700",
-    color: "#fff",
+    color: WorkaholicTheme.colors.textPrimary,
+    flex: 1,
+    textAlign: "center",
   },
+
+  iconContainer: { flexDirection: "row", justifyContent: "flex-end", flex: 1 },
+  iconButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#f0f0f0",
+    marginHorizontal: 2,
+  },
+  icon: { fontSize: 18 },
 });

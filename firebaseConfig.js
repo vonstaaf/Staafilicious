@@ -14,13 +14,13 @@ import { Platform } from "react-native";
 
 // 🔑 Byt ut dessa placeholders mot riktiga värden från Firebase Console
 const firebaseConfig = {
-  apiKey: "BIaNyi_3hJsFpLmMxRyqJd72_HHA8i7PQJ3_cVMbE5iLK4rg5eaTMW7OhAB0z2knc8Tnuie0GQzkM7GqOVZPoT0",
-  authDomain: "Workaholic.firebaseapp.com",
+  apiKey: "AIzaSyDvomXmrLbI6s5uGsrWAeQU-idJYfCRrq8",
+  authDomain: "staafilicious.firebaseapp.com",
   projectId: "staafilicious",
-  storageBucket: "Workaholic.appspot.com",
+  storageBucket: "staafilicious.appspot.app",
   messagingSenderId: "763451849508",
   appId: "1:763451849508:web:46f73405e868a62c1d91b1",
-  measurementId: "G-D67MDTNMDB", // valfri, används för Analytics
+  measurementId: "G-D67MDTNMDB"
 };
 
 // 🚀 Initiera Firebase
@@ -40,7 +40,7 @@ if (Platform.OS === "web") {
 }
 export { auth };
 
-// 📦 Firestore (molndatabas för grupper, produkter, transaktioner)
+// 📦 Firestore (molndatabas för grupper, produkter, Kostnader)
 export const db = getFirestore(app);
 
 // 📊 Analytics (kontrollerar stöd innan initiering)

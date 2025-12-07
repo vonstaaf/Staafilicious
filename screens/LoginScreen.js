@@ -1,5 +1,5 @@
 // screens/LoginScreen.js
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -14,29 +14,18 @@ import {
   ScrollView,
 } from "react-native";
 import { auth, logAnalyticsEvent } from "../firebaseConfig";
-import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
-import Button from "../components/Button"; // 🔑 Workaholic-knapp
+import { signInWithEmailAndPassword } from "firebase/auth";
+import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 import { Ionicons } from "@expo/vector-icons";
 
-const { width } = Dimensions.get("window"); // 🔑 hämta skärmbredd
+const { width } = Dimensions.get("window");
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  // 🔑 Kolla auth-state och navigera till Home om användaren redan är inloggad
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        navigation.replace("Home"); // ✅ rätt att använda replace här
-      }
-    });
-    return unsubscribe;
-  }, []);
-
-  // 🔑 Hantera login
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert("Fel", "Fyll i både email och lösenord.");
@@ -45,7 +34,7 @@ export default function LoginScreen({ navigation }) {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       logAnalyticsEvent("user_login", { method: "email" });
-      navigation.replace("Home"); // ✅ använd replace här
+      // ✅ Ingen navigation här – auth hanterar det via App.js
     } catch (error) {
       Alert.alert("Fel vid inloggning", error.message || "Något gick fel vid inloggning.");
     }
@@ -58,7 +47,6 @@ export default function LoginScreen({ navigation }) {
     >
       <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
         <View style={styles.container}>
-          {/* 🔑 Responsiv stor logga */}
           <Image
             source={require("../assets/logo.png")}
             style={styles.logo}
@@ -67,7 +55,6 @@ export default function LoginScreen({ navigation }) {
 
           <Text style={styles.title}>Logga in</Text>
 
-          {/* Email */}
           <View style={styles.inputContainer}>
             <TextInput
               placeholder="Email"
@@ -79,7 +66,6 @@ export default function LoginScreen({ navigation }) {
             />
           </View>
 
-          {/* Lösenord med ikon */}
           <View style={styles.inputContainer}>
             <TextInput
               placeholder="Lösenord"
@@ -97,13 +83,12 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Knappar */}
           <View style={styles.buttonContainer}>
             <Button title="Logga in" type="primary" onPress={handleLogin} />
             <Button
               title="Registrera nytt konto"
               type="secondary"
-              onPress={() => navigation.navigate("Register")} // ✅ navigate istället för replace
+              onPress={() => navigation.navigate("Register")}
             />
           </View>
         </View>
@@ -120,8 +105,8 @@ const styles = StyleSheet.create({
     backgroundColor: WorkaholicTheme.colors.background,
   },
   logo: {
-    width: width * 0.5, // 🔑 loggan tar 50% av skärmens bredd
-    height: width * 0.5, // kvadratisk
+    width: width * 0.5,
+    height: width * 0.5,
     alignSelf: "center",
     marginBottom: 0,
   },
@@ -149,6 +134,6 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     marginTop: 20,
-    gap: 12, // 🔑 ger mellanrum mellan knapparna
+    gap: 12,
   },
 });
