@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "763451849508",
+    "project_id": "staafilicious",
+    "storage_bucket": "staafilicious.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:763451849508:android:a403fea4cda2fd061d91b1",
+        "android_client_info": {
+          "package_name": "com.staafilicious.workaholic"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "763451849508-oicqtq1krl0t4clktc22j4qem1u66uo1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATkNDHjkkkY6vEdE0H-JWr9NPEc_8cU48"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "763451849508-oicqtq1krl0t4clktc22j4qem1u66uo1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
