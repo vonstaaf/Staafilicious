@@ -1,25 +1,50 @@
-import React, { useContext } from "react";
+import React, { useContext, useState, useEffect } from "react";
 import { 
   View, 
   Text, 
-  FlatList, 
   StyleSheet, 
-  Share, 
   Alert, 
   TouchableOpacity, 
-  Platform 
+  Switch,
+  Image,
+  ScrollView,
+  Dimensions
 } from "react-native";
-import { GroupsContext } from "../context/GroupsContext";
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ProjectsContext } from "../context/ProjectsContext";
+import { useBadges } from "../context/BadgeContext";
 import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 import { Ionicons } from "@expo/vector-icons";
 
-export default function SettlementScreen() {
-  // Hämta funktioner från Context
-  const { selectedGroup, calculateTotal, updateKostnader } = useContext(GroupsContext);
+const { width } = Dimensions.get("window");
 
-  // Om ingen grupp är vald
-  if (!selectedGroup) {
+const formatNumber = (n) => {
+  if (n === null || n === undefined || isNaN(n)) return "0,00";
+  return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+};
+
+export default function SettlementScreen() {
+  const { selectedProject, updateProjectData } = useContext(ProjectsContext);
+  const { setCurrentLogo } = useBadges(); 
+  const [showVat, setShowVat] = useState(true); 
+  const [useRot, setUseRot] = useState(false);
+  const [logo, setLogo] = useState(null);
+
+  // Laddar sparad logo vid start
+  useEffect(() => {
+    const loadLogo = async () => {
+      const savedLogo = await AsyncStorage.getItem("user_logo");
+      if (savedLogo) setLogo(savedLogo);
+    };
+    loadLogo();
+  }, []);
+
+  if (!selectedProject) {
     return (
       <View style={styles.centered}>
         <Ionicons name="document-text-outline" size={64} color="#ccc" />
@@ -28,172 +53,201 @@ export default function SettlementScreen() {
     );
   }
 
-  const kostnader = selectedGroup.kostnader || [];
+  // --- BERÄKNINGAR ---
+  const kostnader = selectedProject.kostnader || [];
+  const produkter = selectedProject.products || [];
+
+  const arbeteExclVat = kostnader.reduce((acc, it) => acc + (Number(it.totalExclVat) || 0), 0);
+  const materialExclVat = produkter.reduce((acc, it) => acc + (Number(it.unitPriceOutExclVat || 0) * Number(it.quantity || 0)), 0);
   
-  // Beräkningar för sammanfattningen
-  const totalTimmar = kostnader.reduce((acc, curr) => acc + (Number(curr.timmar) || 0), 0);
-  const totalArbete = kostnader.reduce((acc, curr) => acc + (Number(curr.timmar) * Number(curr.timpris) || 0), 0);
-  const totalUtlagg = kostnader.reduce((acc, curr) => acc + (Number(curr.bilkostnad) || 0), 0);
-  const totalSumma = totalArbete + totalUtlagg;
+  const totalExclVat = arbeteExclVat + materialExclVat;
+  const momsBelopp = showVat ? totalExclVat * 0.25 : 0;
+  const totalInklValdMoms = totalExclVat + momsBelopp;
 
-  const handleExport = () => {
-    if (kostnader.length === 0) {
-      Alert.alert("Tom logg", "Det finns inget att exportera.");
-      return;
+  const rotBas = showVat ? arbeteExclVat * 1.25 : arbeteExclVat;
+  const rotAvdrag = useRot ? rotBas * 0.30 : 0;
+  
+  const slutSumma = totalInklValdMoms - rotAvdrag;
+
+  // --- LOGO HANTERING ---
+  const pickImage = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (!result.canceled) {
+      const base64Img = `data:image/jpeg;base64,${result.assets[0].base64}`;
+      setLogo(base64Img); 
+      await AsyncStorage.setItem("user_logo", base64Img); 
+      if (setCurrentLogo) setCurrentLogo(base64Img);
     }
+  };
 
-    const message = `
-📊 SAMMANSTÄLLNING: ${selectedGroup.name}
-----------------------------------
-Totalt arbete: ${totalArbete} kr (${totalTimmar} h)
-Bil/Övrigt: ${totalUtlagg} kr
-TOTALT ATT FAKTURERA: ${totalSumma} kr
+  const removeLogo = () => {
+    Alert.alert("Ta bort logotyp?", "Vill du radera din sparade företagslogga?", [
+      { text: "Avbryt", style: "cancel" },
+      { text: "Radera", style: "destructive", onPress: async () => {
+          setLogo(null);
+          if (setCurrentLogo) setCurrentLogo(null);
+          await AsyncStorage.removeItem("user_logo");
+        } 
+      }
+    ]);
+  };
 
-SPECIFIKATION:
-${kostnader.map(item => `- ${item.datum}: ${item.info} (${item.timmar}h)`).join("\n")}
+  // --- EXPORT FUNKTIONER ---
+  const exportToExcel = async () => {
+    try {
+      let csv = "\uFEFF"; 
+      csv += "Kategori;Beskrivning;Info;Mängd;Pris exkl;Summa exkl\n";
+      kostnader.forEach(it => csv += `Arbete;${it.info};${it.datum};${it.timmar} h;${it.timpris};${it.totalExclVat}\n`);
+      produkter.forEach(it => csv += `Material;${it.name};E-nr: ${it.eNumber};${it.quantity} st;${it.unitPriceOutExclVat};${it.unitPriceOutExclVat * it.quantity}\n`);
+      
+      const filename = `${FileSystem.cacheDirectory}Projekt_${selectedProject.name.replace(/\s/g, '_')}.csv`;
+      await FileSystem.writeAsStringAsync(filename, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(filename);
+    } catch (e) {
+      Alert.alert("Fel", "Kunde inte skapa filen.");
+    }
+  };
+
+  const createPDF = async () => {
+    const html = `
+      <html>
+        <body style="font-family: sans-serif; padding: 40px;">
+          <h1 style="color: ${WorkaholicTheme.colors.primary};">PROJEKTUNDERLAG</h1>
+          <p><strong>Projekt: ${selectedProject.name.toUpperCase()}</strong></p>
+          <hr/>
+          <p>Totalt att betala: ${formatNumber(slutSumma)} kr</p>
+        </body>
+      </html>
     `;
-
-    Share.share({ message, title: `Rapport: ${selectedGroup.name}` });
+    const { uri } = await Print.printToFileAsync({ html });
+    await Sharing.shareAsync(uri);
   };
-
-  const handleReset = () => {
-    Alert.alert(
-      "Nollställ projekt?",
-      "Detta raderar all historik i loggen permanent. Har du exporterat rapporten?",
-      [
-        { text: "Avbryt", style: "cancel" },
-        { 
-          text: "Ja, nollställ", 
-          style: "destructive", 
-          onPress: async () => {
-            try {
-              await updateKostnader(selectedGroup.id, []);
-            } catch (e) {
-              Alert.alert("Fel", "Kunde inte nollställa loggen.");
-            }
-          } 
-        }
-      ]
-    );
-  };
-
-  // Header-komponenten (Kortet längst upp)
-  const renderHeader = () => (
-    <View style={{ marginBottom: 20 }}>
-      <View style={styles.mainCard}>
-        <Text style={styles.groupName}>{selectedGroup.name}</Text>
-        <Text style={styles.totalAmount}>{totalSumma.toLocaleString('sv-SE')} kr</Text>
-        <Text style={styles.totalLabel}>Totalbelopp att fakturera</Text>
-        
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{totalTimmar}h</Text>
-            <Text style={styles.statLabel}>Tid</Text>
-          </View>
-          <View style={[styles.statItem, { borderLeftWidth: 1, borderRightWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }]}>
-            <Text style={styles.statValue}>{totalArbete.toLocaleString('sv-SE')} kr</Text>
-            <Text style={styles.statLabel}>Arbete</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{totalUtlagg.toLocaleString('sv-SE')} kr</Text>
-            <Text style={styles.statLabel}>Utlägg</Text>
-          </View>
-        </View>
-      </View>
-      <Text style={styles.sectionTitle}>DETALJERAD SPECIFIKATION</Text>
-    </View>
-  );
 
   return (
     <View style={styles.container}>
-      <FlatList
-        data={kostnader}
-        ListHeaderComponent={renderHeader}
-        keyExtractor={(_, index) => index.toString()}
-        renderItem={({ item }) => {
-          const radSumma = (Number(item.timmar) * Number(item.timpris)) + (Number(item.bilkostnad) || 0);
-          return (
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rowDate}>{item.datum}</Text>
-                <Text style={styles.rowInfo}>{item.info}</Text>
-                <Text style={styles.rowSubText}>{item.timmar}h × {item.timpris} kr/h</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.rowPrice}>{radSumma.toLocaleString('sv-SE')} kr</Text>
-                {item.bilkostnad > 0 && <Text style={{ fontSize: 10, color: '#666' }}>+ bil</Text>}
-              </View>
-            </View>
-          );
-        }}
-        ListEmptyComponent={<Text style={styles.emptyText}>Inga poster registrerade.</Text>}
-        contentContainerStyle={{ paddingBottom: 120 }}
-      />
-
-      {/* Flytande knappar i botten */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity style={styles.resetBtn} onPress={handleReset}>
-          <Ionicons name="trash-outline" size={24} color="#FF3B30" />
-        </TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 15 }}>
-          <Button title="Exportera rapport" type="primary" onPress={handleExport} />
+      <ScrollView showsVerticalScrollIndicator={false}>
+        
+        {/* HUVUDKORT */}
+        <View style={styles.mainCard}>
+          {logo ? (
+            <Image source={{ uri: logo }} style={styles.brandLogo} />
+          ) : (
+            <Ionicons name="business" size={60} color="rgba(255,255,255,0.4)" style={{ marginBottom: 20 }} />
+          )}
+          <Text style={styles.groupName}>PROJEKT: {selectedProject.name.toUpperCase()}</Text>
+          <Text style={styles.totalAmount}>{formatNumber(slutSumma)} kr</Text>
+          <Text style={styles.totalLabel}>
+            {useRot ? "Att betala efter ROT" : `Totalt (${showVat ? 'inkl.' : 'exkl.'} moms)`}
+          </Text>
         </View>
-      </View>
+
+        <View style={styles.settingsSection}>
+          <View style={styles.settingCard}>
+            <View style={styles.rowBetween}>
+              <View>
+                <Text style={styles.settingTitle}>Moms (25%)</Text>
+                <Text style={styles.settingSub}>Visa priser inkl. moms</Text>
+              </View>
+              <Switch value={showVat} onValueChange={setShowVat} trackColor={{ true: WorkaholicTheme.colors.primary }} />
+            </View>
+          </View>
+
+          <View style={styles.settingCard}>
+            <View style={styles.rowBetween}>
+              <View>
+                <Text style={styles.settingTitle}>ROT-avdrag</Text>
+                <Text style={styles.settingSub}>30% avdrag på arbetet</Text>
+              </View>
+              <Switch value={useRot} onValueChange={setUseRot} trackColor={{ true: WorkaholicTheme.colors.primary }} />
+            </View>
+          </View>
+        </View>
+
+        <TouchableOpacity style={styles.logoPicker} onPress={pickImage} onLongPress={logo ? removeLogo : null}>
+          <Ionicons name={logo ? "sync" : "image-outline"} size={22} color={WorkaholicTheme.colors.primary} />
+          <Text style={styles.logoPickerText}>
+            {logo ? "Byt logotyp (Håll inne för att ta bort)" : "Ladda upp företagssymbol"}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.actions}>
+          <Button title="DELA PDF-UNDERLAG" type="primary" onPress={createPDF} />
+          <View style={{ height: 12 }} />
+          <TouchableOpacity style={styles.excelBtn} onPress={exportToExcel}>
+            <Ionicons name="stats-chart" size={18} color="#fff" />
+            <Text style={styles.excelBtnText}>EXPORTERA TILL EXCEL</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity 
+          style={styles.resetLink} 
+          onPress={() => Alert.alert("Nollställ?", "Detta raderar allt material och all tid i projektet.", [
+            { text: "Avbryt" }, 
+            { text: "Nollställ", style: "destructive", onPress: () => updateProjectData(selectedProject.id, { kostnader: [], products: [] }) }
+          ])}
+        >
+          <Text style={styles.resetText}>Nollställ projektdata</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F2F2F7', paddingHorizontal: 15 },
+  container: { flex: 1, backgroundColor: '#F8F9FB', paddingHorizontal: 20 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  mainCard: {
-    backgroundColor: WorkaholicTheme.colors.primary,
-    borderRadius: 20,
-    padding: 20,
-    alignItems: 'center',
-    marginTop: 15,
+  mainCard: { 
+    backgroundColor: WorkaholicTheme.colors.primary, 
+    borderRadius: 25, 
+    paddingVertical: 40, 
+    paddingHorizontal: 20,
+    alignItems: 'center', 
+    marginTop: 20,
     elevation: 4,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
-    shadowRadius: 4,
+    shadowRadius: 10,
   },
-  groupName: { color: 'rgba(255,255,255,0.6)', fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
-  totalAmount: { color: '#fff', fontSize: 32, fontWeight: '800', marginVertical: 4 },
-  totalLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginBottom: 15 },
-  statsRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 15 },
-  statItem: { flex: 1, alignItems: 'center' },
-  statValue: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  statLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 10 },
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#8E8E93', marginTop: 25, marginBottom: 10 },
-  row: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+  brandLogo: { width: '80%', height: 100, resizeMode: 'contain', marginBottom: 20 },
+  groupName: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  totalAmount: { color: '#fff', fontSize: 36, fontWeight: '900', marginVertical: 5 },
+  totalLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '600' },
+  settingsSection: { marginTop: 20 },
+  settingCard: { backgroundColor: '#fff', borderRadius: 15, padding: 18, marginBottom: 10, elevation: 1 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  settingTitle: { fontWeight: '800', fontSize: 15, color: '#333' },
+  settingSub: { fontSize: 12, color: '#AAA', marginTop: 2 },
+  logoPicker: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#fff', 
+    padding: 18, 
+    borderRadius: 15, 
+    marginTop: 10, 
+    borderStyle: 'dashed', 
+    borderWidth: 1.5, 
+    borderColor: '#DDD' 
   },
-  rowDate: { fontSize: 10, color: '#8E8E93' },
-  rowInfo: { fontSize: 15, fontWeight: '600', color: '#000' },
-  rowSubText: { fontSize: 12, color: '#8E8E93' },
-  rowPrice: { fontSize: 16, fontWeight: '700', color: WorkaholicTheme.colors.primary },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    backgroundColor: '#fff',
-    padding: 20,
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5EA',
-    paddingBottom: Platform.OS === 'ios' ? 35 : 20
+  logoPickerText: { flex: 1, marginLeft: 12, color: WorkaholicTheme.colors.primary, fontSize: 14, fontWeight: '700' },
+  actions: { marginTop: 25 },
+  excelBtn: { 
+    flexDirection: 'row', 
+    backgroundColor: '#1D6F42', 
+    height: 55, 
+    borderRadius: 15, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
   },
-  resetBtn: {
-    width: 50, height: 50,
-    borderRadius: 12,
-    backgroundColor: '#FFF1F0',
-    justifyContent: 'center', alignItems: 'center'
-  },
-  emptyText: { textAlign: 'center', marginTop: 40, color: '#8E8E93' }
+  excelBtnText: { color: '#fff', fontWeight: '800', marginLeft: 10, letterSpacing: 0.5 },
+  resetLink: { marginTop: 35, alignItems: 'center', marginBottom: 50 },
+  resetText: { color: '#FF3B30', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
+  emptyText: { textAlign: 'center', marginTop: 15, color: '#999', fontWeight: '600' }
 });

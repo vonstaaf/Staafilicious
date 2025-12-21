@@ -15,6 +15,9 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "NODE_ENV": "production"
       }
     },
     "production": {
@@ -24,7 +27,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "GOOGLE_SERVICES_JSON": "@GOOGLE_SERVICES_JSON"
+        "NODE_ENV": "production"
       }
     }
   },

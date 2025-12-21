@@ -1,4 +1,3 @@
-// screens/RegisterScreen.js
 import React, { useState } from "react";
 import {
   View,
@@ -30,54 +29,63 @@ export default function RegisterScreen({ navigation }) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleRegister = async () => {
-    if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
-      Alert.alert("Fel", "Fyll i alla fält.");
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail || !password.trim() || !confirmPassword.trim()) {
+      Alert.alert("Information saknas", "Vänligen fyll i alla fält.");
       return;
     }
     if (password.length < 6) {
-      Alert.alert("Fel", "Lösenordet måste vara minst 6 tecken.");
+      Alert.alert("Lösenordet är för kort", "Lösenordet måste vara minst 6 tecken.");
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert("Fel", "Lösenorden matchar inte.");
+      Alert.alert("Matchningsfel", "Lösenorden stämmer inte överens.");
       return;
     }
+
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       const user = userCredential.user;
 
-      // 📦 Spara användare i Firestore
+      // Spara användardata i Firestore
       await setDoc(doc(db, "users", user.uid), {
         email: user.email,
         createdAt: new Date().toISOString(),
       });
 
-      // 📊 Logga Analytics-event
       logAnalyticsEvent("user_signup", { method: "email" });
-
-      Alert.alert("Konto skapat!", "Du är nu registrerad.");
-      // ✅ Ingen navigation här – App.js visar MainStack automatiskt när user är satt
+      Alert.alert("Klart!", "Ditt konto har skapats.");
     } catch (error) {
-      Alert.alert("Fel vid registrering", error.message || "Något gick fel vid registrering.");
+      let msg = "Det gick inte att skapa kontot.";
+      if (error.code === 'auth/email-already-in-use') msg = "E-postadressen används redan.";
+      if (error.code === 'auth/invalid-email') msg = "Ogiltig e-postadress.";
+      
+      Alert.alert("Registreringsfel", msg);
     }
   };
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: WorkaholicTheme.colors.background }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+      <ScrollView 
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.container}>
           <Image
-            source={require("../assets/logo.png")}
+            source={require("../assets/workaholic_logo_white.png")}
             style={styles.logo}
             resizeMode="contain"
           />
 
-          <Text style={styles.title}>Registrera konto</Text>
+          <Text style={styles.title}>SKAPA KONTO</Text>
 
+          {/* Email Input */}
           <View style={styles.inputContainer}>
+            <Ionicons name="mail-outline" size={20} color="#999" style={{ marginRight: 10 }} />
             <TextInput
               placeholder="Email"
               value={email}
@@ -85,50 +93,58 @@ export default function RegisterScreen({ navigation }) {
               autoCapitalize="none"
               keyboardType="email-address"
               style={styles.textInput}
+              placeholderTextColor="#AAA"
             />
           </View>
 
+          {/* Password Input */}
           <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color="#999" style={{ marginRight: 10 }} />
             <TextInput
               placeholder="Lösenord"
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
               style={styles.textInput}
+              placeholderTextColor="#AAA"
             />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 5 }}>
               <Ionicons
                 name={showPassword ? "eye-off-outline" : "eye-outline"}
-                size={24}
-                color={WorkaholicTheme.colors.secondary}
+                size={22}
+                color={WorkaholicTheme.colors.primary}
               />
             </TouchableOpacity>
           </View>
 
+          {/* Confirm Password Input */}
           <View style={styles.inputContainer}>
+            <Ionicons name="shield-checkmark-outline" size={20} color="#999" style={{ marginRight: 10 }} />
             <TextInput
               placeholder="Bekräfta lösenord"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry={!showConfirmPassword}
               style={styles.textInput}
+              placeholderTextColor="#AAA"
             />
-            <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+            <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={{ padding: 5 }}>
               <Ionicons
                 name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
-                size={24}
-                color={WorkaholicTheme.colors.secondary}
+                size={22}
+                color={WorkaholicTheme.colors.primary}
               />
             </TouchableOpacity>
           </View>
 
           <View style={styles.buttonContainer}>
-            <Button title="Registrera" type="primary" onPress={handleRegister} />
-            <Button
-              title="Tillbaka till login"
-              type="secondary"
+            <Button title="REGISTRERA DIG" type="primary" onPress={handleRegister} />
+            <TouchableOpacity 
               onPress={() => navigation.navigate("Login")}
-            />
+              style={styles.backButton}
+            >
+              <Text style={styles.backButtonText}>Redan medlem? Logga in här</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -140,39 +156,56 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: "center",
-    padding: 20,
-    backgroundColor: WorkaholicTheme.colors.background,
+    padding: 30,
   },
   logo: {
-    width: width * 0.7,
-    height: width * 0.7,
+    width: width * 0.4,
+    height: width * 0.4,
     alignSelf: "center",
-    marginBottom: 30,
+    marginBottom: 10,
   },
   title: {
-    fontSize: 22,
-    fontWeight: "700",
-    marginBottom: 20,
+    fontSize: 20,
+    fontWeight: "800",
+    marginBottom: 30,
     color: WorkaholicTheme.colors.primary,
     textAlign: "center",
+    letterSpacing: 1,
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: WorkaholicTheme.colors.secondary,
-    borderRadius: 8,
-    backgroundColor: WorkaholicTheme.colors.surface,
-    paddingHorizontal: 10,
-    marginBottom: 12,
+    borderColor: "#EEE",
+    borderRadius: 12,
+    backgroundColor: "#FFF",
+    paddingHorizontal: 15,
+    marginBottom: 15,
+    height: 55,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
   textInput: {
     flex: 1,
-    padding: 10,
-    color: WorkaholicTheme.colors.textPrimary,
+    height: "100%",
+    color: "#333",
+    fontSize: 15,
+    fontWeight: "600",
   },
   buttonContainer: {
-    marginTop: 20,
+    marginTop: 15,
     gap: 12,
+  },
+  backButton: {
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  backButtonText: {
+    color: "#666",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

@@ -5,7 +5,7 @@ import { Image, StyleSheet } from "react-native";
 export default function Logo() {
   return (
     <Image
-      source={require("../assets/logo.png")} // 🔑 se till att logo.png ligger i /assets
+      source={require("../assets/workaholic_logo_white.png")} // 🔑 se till att workaholic_logo_white.png ligger i /assets
       style={styles.logo}
       resizeMode="contain"
     />

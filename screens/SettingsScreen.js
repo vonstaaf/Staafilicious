@@ -1,9 +1,9 @@
-// screens/SettingsScreen.js
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Switch, TouchableOpacity, Alert } from "react-native";
+import { View, Text, StyleSheet, Switch, TouchableOpacity, Alert, ScrollView } from "react-native";
 import { WorkaholicTheme } from "../theme";
 import { auth } from "../firebaseConfig";
 import { signOut } from "firebase/auth";
+import { Ionicons } from "@expo/vector-icons";
 import Button from "../components/Button";
 
 export default function SettingsScreen({ navigation }) {
@@ -12,111 +12,166 @@ export default function SettingsScreen({ navigation }) {
 
   const toggleNotifications = (value) => {
     setNotificationsEnabled(value);
-    Alert.alert("Inställning ändrad", value ? "Notiser aktiverade" : "Notiser avstängda");
+    // Valfritt: Ta bort Alert om du vill ha ett tystare gränssnitt
   };
 
   const toggleDarkMode = (value) => {
     setDarkMode(value);
-    Alert.alert("Inställning ändrad", value ? "Mörkt läge aktiverat" : "Mörkt läge avstängt");
   };
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      Alert.alert("Utloggad", "Du är nu utloggad.");
-      // ✅ App.js visar AuthStack automatiskt
-    } catch (error) {
-      Alert.alert("Fel vid utloggning", error.message || "Något gick fel.");
-    }
+  const handleLogout = () => {
+    Alert.alert(
+      "Logga ut",
+      "Är du säker på att du vill logga ut?",
+      [
+        { text: "Avbryt", style: "cancel" },
+        { 
+          text: "Logga ut", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              await signOut(auth);
+            } catch (error) {
+              Alert.alert("Fel", "Kunde inte logga ut just nu.");
+            }
+          } 
+        }
+      ]
+    );
   };
+
+  // Hjälpkomponent för rader i inställningarna
+  const SettingRow = ({ icon, label, children, onPress }) => (
+    <TouchableOpacity 
+      style={styles.card} 
+      onPress={onPress} 
+      activeOpacity={onPress ? 0.7 : 1}
+    >
+      <View style={styles.leftContent}>
+        <View style={styles.iconContainer}>
+          <Ionicons name={icon} size={20} color={WorkaholicTheme.colors.primary} />
+        </View>
+        <Text style={styles.label}>{label}</Text>
+      </View>
+      {children}
+    </TouchableOpacity>
+  );
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <Text style={styles.title}>Inställningar</Text>
 
-      {/* Notiser */}
-      <View style={styles.card}>
-        <Text style={styles.label}>Notiser</Text>
+      <Text style={styles.sectionTitle}>PREFERENSER</Text>
+      
+      <SettingRow icon="notifications-outline" label="Notiser">
         <Switch
           value={notificationsEnabled}
           onValueChange={toggleNotifications}
-          thumbColor={notificationsEnabled ? WorkaholicTheme.colors.primary : "#ccc"}
+          thumbColor={notificationsEnabled ? WorkaholicTheme.colors.primary : "#f4f3f4"}
           trackColor={{ true: WorkaholicTheme.colors.secondary, false: "#ccc" }}
         />
-      </View>
+      </SettingRow>
 
-      {/* Mörkt läge */}
-      <View style={styles.card}>
-        <Text style={styles.label}>Mörkt läge</Text>
+      <SettingRow icon="moon-outline" label="Mörkt läge">
         <Switch
           value={darkMode}
           onValueChange={toggleDarkMode}
-          thumbColor={darkMode ? WorkaholicTheme.colors.primary : "#ccc"}
+          thumbColor={darkMode ? WorkaholicTheme.colors.primary : "#f4f3f4"}
           trackColor={{ true: WorkaholicTheme.colors.secondary, false: "#ccc" }}
         />
-      </View>
+      </SettingRow>
 
-      {/* Profil */}
-      <View style={styles.card}>
-        <Text style={styles.label}>Profil</Text>
-        <TouchableOpacity onPress={() => navigation.navigate("Profile")}>
-          <Text style={styles.link}>Redigera</Text>
-        </TouchableOpacity>
-      </View>
+      <Text style={styles.sectionTitle}>KONTO & SÄKERHET</Text>
 
-      {/* Appinformation */}
-      <View style={styles.card}>
-        <Text style={styles.label}>Appinformation</Text>
-        <Text style={styles.text}>Version 1.0.0</Text>
-      </View>
+      <SettingRow 
+        icon="person-outline" 
+        label="Profil" 
+        onPress={() => navigation.navigate("Profile")}
+      >
+        <Ionicons name="chevron-forward" size={20} color="#ccc" />
+      </SettingRow>
 
-      {/* Logga ut */}
-      <View style={styles.card}>
-        <Text style={styles.label}>Konto</Text>
-        <Button title="Logga ut" type="secondary" onPress={handleLogout} />
+      <Text style={styles.sectionTitle}>OM APPEN</Text>
+
+      <SettingRow icon="information-circle-outline" label="Version">
+        <Text style={styles.versionText}>1.0.1</Text>
+      </SettingRow>
+
+      <View style={styles.logoutContainer}>
+        <Button 
+          title="Logga ut" 
+          type="secondary" 
+          onPress={handleLogout} 
+        />
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: WorkaholicTheme.colors.background || "#F8F9FA",
+  },
+  contentContainer: {
     padding: 20,
-    backgroundColor: WorkaholicTheme.colors.background,
+    paddingBottom: 40,
   },
   title: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 24,
+    fontWeight: "800",
     color: WorkaholicTheme.colors.primary,
-    marginBottom: 20,
-    textAlign: "center",
+    marginBottom: 25,
+    textAlign: "left",
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#8E8E93",
+    marginBottom: 10,
+    marginTop: 10,
+    letterSpacing: 1,
   },
   card: {
-    backgroundColor: WorkaholicTheme.colors.surface,
-    borderRadius: WorkaholicTheme.borderRadius.medium || 10,
+    backgroundColor: WorkaholicTheme.colors.surface || "#FFFFFF",
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    // Skugga för iOS
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    // Skugga för Android
+    elevation: 3,
+  },
+  leftContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(0, 122, 255, 0.1)", // Ljus variant av primärfärg
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
   },
   label: {
     fontSize: 16,
     fontWeight: "600",
-    color: WorkaholicTheme.colors.textPrimary,
+    color: WorkaholicTheme.colors.textPrimary || "#1C1C1E",
   },
-  link: {
-    fontSize: 16,
-    color: WorkaholicTheme.colors.secondary,
-    fontWeight: "600",
-  },
-  text: {
+  versionText: {
     fontSize: 14,
-    color: WorkaholicTheme.colors.textSecondary,
+    color: "#8E8E93",
+    fontWeight: "500",
+  },
+  logoutContainer: {
+    marginTop: 30,
   },
 });

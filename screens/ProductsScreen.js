@@ -1,4 +1,3 @@
-import InfoBox from "../components/InfoBox";
 import React, { useContext, useEffect, useState } from "react";
 import {
   View,
@@ -9,23 +8,19 @@ import {
   StyleSheet,
   TouchableOpacity,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Keyboard
 } from "react-native";
-import { GroupsContext } from "../context/GroupsContext";
+import { Ionicons } from "@expo/vector-icons";
+import { ProjectsContext } from "../context/ProjectsContext";
+import InfoBox from "../components/InfoBox";
 import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 
-// Hjälpfunktioner
+// Hjälpfunktioner för formatering
 const formatNumber = (n) => {
-  if (n === null || n === undefined || isNaN(n)) return "0";
-  return new Intl.NumberFormat('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-};
-
-const computeTotal = (purchasePrice, markup, vat) => {
-  const p = parseFloat(purchasePrice) || 0;
-  const m = parseFloat(markup) || 0;
-  const v = parseFloat(vat) || 0;
-  return p * (1 + m / 100) * (1 + v / 100);
+  if (n === null || n === undefined || isNaN(n)) return "0,00";
+  return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 };
 
 const capitalizeFirst = (text) => {
@@ -33,52 +28,57 @@ const capitalizeFirst = (text) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
-// Tillåter siffror och punkt/komma för decimaler
 const decimalOnly = (text) => {
-  return text.replace(/[^0-9.,]/g, "").replace(",", ".");
+  let cleaned = text.replace(",", ".").replace(/[^0-9.]/g, "");
+  const parts = cleaned.split(".");
+  if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
+  return cleaned;
 };
 
 export default function ProductsScreen() {
-  const { selectedGroup, updateProducts } = useContext(GroupsContext);
+  const { selectedProject, updateProjectData } = useContext(ProjectsContext);
   const [products, setProducts] = useState([]);
-  const [newRow, setNewRow] = useState({
+  
+  const initialRowState = {
     name: "",
-    eNumber: "",
+    articleNumber: "", // Uppdaterad från eNumber
     purchasePrice: "",
-    markup: "",
-    vat: "",
+    markup: "15", 
     quantity: "1",
-  });
+  };
+
+  const [newRow, setNewRow] = useState(initialRowState);
   const [editingIndex, setEditingIndex] = useState(null);
 
-  // Synka lokalt state med molndatan när gruppen uppdateras (t.ex. av annan användare)
   useEffect(() => {
-    if (selectedGroup?.products) {
-      setProducts(selectedGroup.products);
+    if (selectedProject?.products) {
+      setProducts(selectedProject.products);
+    } else {
+      setProducts([]);
     }
-  }, [selectedGroup?.products]);
+  }, [selectedProject]);
 
   const saveProduct = async () => {
-    if (!selectedGroup) return;
-    if (!newRow.name.trim() || !newRow.eNumber.trim()) {
-      Alert.alert("Fel", "Ange både produktnamn och E‑nummer.");
+    if (!selectedProject) return;
+    if (!newRow.name.trim()) {
+      Alert.alert("Information saknas", "Ange produktnamn.");
       return;
     }
 
     const p = parseFloat(newRow.purchasePrice) || 0;
     const m = parseFloat(newRow.markup) || 0;
-    const v = parseFloat(newRow.vat) || 0;
-    const q = parseInt(newRow.quantity) || 1;
-    const total = computeTotal(p, m, v);
+    const q = parseFloat(newRow.quantity) || 0;
+
+    // Beräkna utpris exkl. moms
+    const unitPriceOutExclVat = p * (1 + m / 100);
 
     const newItem = {
       name: capitalizeFirst(newRow.name.trim()),
-      eNumber: newRow.eNumber.trim(),
+      articleNumber: newRow.articleNumber.trim() || "-", // Uppdaterad nyckel
       purchasePrice: p,
       markup: m,
-      vat: v,
       quantity: q,
-      totalPrice: total, // Pris per styck inkl. allt
+      unitPriceOutExclVat: unitPriceOutExclVat,
     };
 
     let updated;
@@ -87,26 +87,28 @@ export default function ProductsScreen() {
       updated[editingIndex] = newItem;
       setEditingIndex(null);
     } else {
-      updated = [...products, newItem];
+      updated = [newItem, ...products];
     }
 
-    // Uppdatera molnet (Context anropar Firestore)
-    await updateProducts(selectedGroup.id, updated);
-
-    // Nollställ formulär
-    setNewRow({ name: "", eNumber: "", purchasePrice: "", markup: "", vat: "", quantity: "1" });
+    try {
+      await updateProjectData(selectedProject.id, { products: updated });
+      setNewRow(initialRowState);
+      Keyboard.dismiss();
+    } catch (e) {
+      Alert.alert("Fel", "Kunde inte spara produkten till projektet.");
+    }
   };
 
   const deleteProduct = async (index) => {
     Alert.alert("Radera", "Vill du ta bort produkten?", [
       { text: "Avbryt", style: "cancel" },
-      { 
-        text: "Radera", 
-        style: "destructive", 
+      {
+        text: "Radera",
+        style: "destructive",
         onPress: async () => {
           const updated = products.filter((_, i) => i !== index);
-          await updateProducts(selectedGroup.id, updated);
-        } 
+          await updateProjectData(selectedProject.id, { products: updated });
+        }
       }
     ]);
   };
@@ -114,146 +116,145 @@ export default function ProductsScreen() {
   const startEdit = (item, index) => {
     setNewRow({
       name: item.name,
-      eNumber: String(item.eNumber),
+      articleNumber: item.articleNumber === "-" ? "" : item.articleNumber,
       purchasePrice: String(item.purchasePrice),
       markup: String(item.markup),
-      vat: String(item.vat),
       quantity: String(item.quantity),
     });
     setEditingIndex(index);
   };
 
-  // Summeringar
-  const sumPurchase = products.reduce((acc, it) => acc + (it.purchasePrice * it.quantity), 0);
-  const sumTotal = products.reduce((acc, it) => acc + (it.totalPrice * it.quantity), 0);
-  const profit = sumTotal - sumPurchase;
+  const sumPurchase = products.reduce((acc, it) => acc + (Number(it.purchasePrice) * Number(it.quantity) || 0), 0);
+  const sumTotalOutExclVat = products.reduce((acc, it) => acc + (Number(it.unitPriceOutExclVat) * Number(it.quantity) || 0), 0);
+
+  if (!selectedProject) {
+    return (
+      <View style={styles.centeredContainer}>
+        <Ionicons name="cart-outline" size={80} color="#ccc" />
+        <Text style={styles.noGroupText}>INGET AKTIVT PROJEKT VALT</Text>
+      </View>
+    );
+  }
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === "ios" ? "padding" : "height"} 
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      <InfoBox
-        title={`${selectedGroup?.name || "Ingen grupp"}`}
-        items={[
-          `Antal artiklar: ${products.length}`,
-          `Totalt inköp: ${formatNumber(sumPurchase)} kr`,
-          `Totalt ut: ${formatNumber(sumTotal)} kr`,
-          `Vinst: ${formatNumber(profit)} kr`,
-        ]}
-      />
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>{editingIndex !== null ? "Redigera produkt" : "Ny produkt"}</Text>
-        
-        <View style={styles.inputRow}>
-          <TextInput
-            placeholder="Produktnamn"
-            value={newRow.name}
-            onChangeText={(v) => setNewRow(s => ({ ...s, name: v }))}
-            style={[styles.input, { flex: 2 }]}
-          />
-          <TextInput
-            placeholder="E-nummer"
-            value={newRow.eNumber}
-            onChangeText={(v) => setNewRow(s => ({ ...s, eNumber: v }))}
-            keyboardType="numeric"
-            style={[styles.input, { flex: 1 }]}
-          />
-        </View>
-
-        <View style={styles.inputRow}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.miniLabel}>Antal</Text>
-            <TextInput
-              value={newRow.quantity}
-              onChangeText={(v) => setNewRow(s => ({ ...s, quantity: decimalOnly(v) }))}
-              keyboardType="numeric"
-              style={styles.input}
-            />
-          </View>
-          <View style={styles.inputGroup}>
-            <Text style={styles.miniLabel}>Inköp</Text>
-            <TextInput
-              value={newRow.purchasePrice}
-              onChangeText={(v) => setNewRow(s => ({ ...s, purchasePrice: decimalOnly(v) }))}
-              keyboardType="numeric"
-              style={styles.input}
-            />
-          </View>
-          <View style={styles.inputGroup}>
-            <Text style={styles.miniLabel}>Påslag %</Text>
-            <TextInput
-              value={newRow.markup}
-              onChangeText={(v) => setNewRow(s => ({ ...s, markup: decimalOnly(v) }))}
-              keyboardType="numeric"
-              style={styles.input}
-            />
-          </View>
-          <View style={styles.inputGroup}>
-            <Text style={styles.miniLabel}>Moms %</Text>
-            <TextInput
-              value={newRow.vat}
-              onChangeText={(v) => setNewRow(s => ({ ...s, vat: decimalOnly(v) }))}
-              keyboardType="numeric"
-              style={styles.input}
-            />
-          </View>
-        </View>
-
-        <View style={styles.buttonRow}>
-          <View style={{ flex: 1 }}>
-             <Button 
-                title={editingIndex !== null ? "Spara" : "Lägg till"} 
-                type="primary" 
-                onPress={saveProduct} 
-              />
-          </View>
-          {editingIndex !== null && (
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Button 
-                title="Avbryt" 
-                type="secondary" 
-                onPress={() => {
-                  setEditingIndex(null);
-                  setNewRow({ name: "", eNumber: "", purchasePrice: "", markup: "", vat: "", quantity: "1" });
-                }} 
-              />
-            </View>
-          )}
-        </View>
-      </View>
-
       <FlatList
         data={products}
         keyExtractor={(_, i) => i.toString()}
         ListHeaderComponent={
-          <View style={styles.headerRow}>
-            <Text style={[styles.headerText, { flex: 2, textAlign: 'left' }]}>Produkt</Text>
-            <Text style={styles.headerText}>Antal</Text>
-            <Text style={styles.headerText}>Totalt</Text>
-            <Text style={styles.headerText}></Text>
-          </View>
+          <>
+            <InfoBox
+              title={`Material: ${selectedProject.name}`}
+              items={[
+                `Antal artiklar: ${products.length} st`,
+                `Totalt inköp: ${formatNumber(sumPurchase)} kr`,
+                `Summa ut (exkl. moms): ${formatNumber(sumTotalOutExclVat)} kr`,
+              ]}
+            />
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>{editingIndex !== null ? "REDIGERA PRODUKT" : "NY PRODUKT"}</Text>
+
+              <View style={styles.inputRow}>
+                <TextInput
+                  placeholder="Produktnamn"
+                  value={newRow.name}
+                  onChangeText={(v) => setNewRow(s => ({ ...s, name: v }))}
+                  style={[styles.input, { flex: 2 }]}
+                  placeholderTextColor="#AAA"
+                />
+                <TextInput
+                  placeholder="Art.nr"
+                  value={newRow.articleNumber}
+                  onChangeText={(v) => setNewRow(s => ({ ...s, articleNumber: v }))}
+                  style={[styles.input, { flex: 1 }]}
+                  placeholderTextColor="#AAA"
+                  autoCapitalize="characters"
+                />
+              </View>
+
+              <View style={styles.inputRow}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.miniLabel}>ANTAL</Text>
+                  <TextInput
+                    value={newRow.quantity}
+                    onChangeText={(v) => setNewRow(s => ({ ...s, quantity: decimalOnly(v) }))}
+                    keyboardType="numeric"
+                    style={styles.input}
+                  />
+                </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.miniLabel}>INKÖPSPRIS</Text>
+                  <TextInput
+                    value={newRow.purchasePrice}
+                    onChangeText={(v) => setNewRow(s => ({ ...s, purchasePrice: decimalOnly(v) }))}
+                    keyboardType="numeric"
+                    style={styles.input}
+                  />
+                </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.miniLabel}>PÅSLAG %</Text>
+                  <TextInput
+                    value={newRow.markup}
+                    onChangeText={(v) => setNewRow(s => ({ ...s, markup: decimalOnly(v) }))}
+                    keyboardType="numeric"
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.buttonRow}>
+                <View style={{ flex: 1 }}>
+                  <Button
+                    title={editingIndex !== null ? "SPARA ÄNDRING" : "LÄGG TILL MATERIAL"}
+                    type="primary"
+                    onPress={saveProduct}
+                  />
+                </View>
+                {editingIndex !== null && (
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Button
+                      title="AVBRYT"
+                      type="secondary"
+                      onPress={() => {
+                        setEditingIndex(null);
+                        setNewRow(initialRowState);
+                        Keyboard.dismiss();
+                      }}
+                    />
+                  </View>
+                )}
+              </View>
+            </View>
+            <Text style={styles.sectionTitle}>PRODUKTLISTA (EXKL. MOMS)</Text>
+          </>
         }
         renderItem={({ item, index }) => (
           <View style={styles.itemRow}>
             <View style={{ flex: 2 }}>
               <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemSub}>{item.eNumber}</Text>
+              <Text style={styles.itemSub}>Art.nr: {item.articleNumber} • {item.markup}% påslag</Text>
             </View>
-            <Text style={styles.itemValue}>{item.quantity}st</Text>
-            <Text style={styles.itemValue}>{formatNumber(item.totalPrice * item.quantity)}:-</Text>
-            
+            <View style={styles.itemRight}>
+              <Text style={styles.itemTotal}>{formatNumber(item.unitPriceOutExclVat * item.quantity)}:-</Text>
+              <Text style={styles.itemSub}>{item.quantity} st</Text>
+            </View>
+
             <View style={styles.actions}>
               <TouchableOpacity onPress={() => startEdit(item, index)} style={styles.actionBtn}>
-                <Text>✏️</Text>
+                <Ionicons name="pencil" size={16} color={WorkaholicTheme.colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => deleteProduct(index)} style={styles.actionBtn}>
-                <Text>🗑️</Text>
+                <Ionicons name="trash-outline" size={16} color={WorkaholicTheme.colors.error} />
               </TouchableOpacity>
             </View>
           </View>
         )}
+        ListEmptyComponent={<Text style={styles.emptyText}>Inga produkter tillagda än.</Text>}
+        contentContainerStyle={{ paddingBottom: 40 }}
       />
     </KeyboardAvoidingView>
   );
@@ -261,48 +262,22 @@ export default function ProductsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 15, backgroundColor: WorkaholicTheme.colors.background },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    padding: 15,
-    marginBottom: 15,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-  },
-  cardTitle: { fontSize: 16, fontWeight: "bold", marginBottom: 10, color: WorkaholicTheme.colors.primary },
-  inputRow: { flexDirection: "row", gap: 10, marginBottom: 10 },
+  centeredContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  noGroupText: { fontSize: 16, fontWeight: '800', color: '#666' },
+  card: { backgroundColor: "#fff", borderRadius: 15, padding: 15, marginBottom: 15, elevation: 4 },
+  cardTitle: { fontSize: 14, fontWeight: "800", marginBottom: 15, color: WorkaholicTheme.colors.primary },
+  inputRow: { flexDirection: "row", gap: 10, marginBottom: 12, alignItems: 'flex-end' },
   inputGroup: { flex: 1 },
-  miniLabel: { fontSize: 10, color: "#888", marginBottom: 2 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#eee",
-    borderRadius: 8,
-    padding: 8,
-    backgroundColor: "#f9f9f9",
-    fontSize: 14,
-  },
-  buttonRow: { flexDirection: 'row', marginTop: 5 },
-  headerRow: {
-    flexDirection: "row",
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderColor: "#ccc",
-    marginBottom: 5,
-  },
-  headerText: { flex: 1, fontWeight: "bold", fontSize: 12, textAlign: 'center', color: "#666" },
-  itemRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 8,
-  },
-  itemName: { fontWeight: "bold", fontSize: 14 },
-  itemSub: { fontSize: 11, color: "#888" },
-  itemValue: { flex: 1, textAlign: 'center', fontSize: 13 },
-  actions: { flexDirection: "row", gap: 10 },
-  actionBtn: { padding: 5, backgroundColor: "#f0f0f0", borderRadius: 5 }
+  miniLabel: { fontSize: 9, color: "#999", marginBottom: 4, fontWeight: '800' },
+  input: { borderWidth: 1, borderColor: "#EEE", borderRadius: 10, padding: 10, backgroundColor: "#F9F9F9", fontSize: 13, fontWeight: '600', color: '#333' },
+  buttonRow: { flexDirection: 'row', marginTop: 10 },
+  sectionTitle: { fontSize: 11, fontWeight: '800', color: '#8E8E93', marginBottom: 10, letterSpacing: 0.5 },
+  itemRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 12, borderRadius: 12, marginBottom: 8, elevation: 2 },
+  itemName: { fontWeight: "700", fontSize: 14, color: '#333' },
+  itemSub: { fontSize: 11, color: "#888", marginTop: 2 },
+  itemRight: { flex: 1, alignItems: 'flex-end', marginRight: 10 },
+  itemTotal: { fontWeight: "800", fontSize: 14, color: '#000' },
+  actions: { flexDirection: "row", gap: 8 },
+  actionBtn: { padding: 8, backgroundColor: "#F5F5F5", borderRadius: 8 },
+  emptyText: { textAlign: 'center', marginTop: 20, color: "#AAA", fontWeight: '600' }
 });

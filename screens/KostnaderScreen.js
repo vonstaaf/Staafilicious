@@ -13,15 +13,15 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { GroupsContext } from "../context/GroupsContext";
+import { ProjectsContext } from "../context/ProjectsContext";
 import InfoBox from "../components/InfoBox";
 import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 
 // Hjälpfunktioner
 const formatNumber = (n) => {
-  if (n === null || n === undefined || isNaN(n)) return "0";
-  return new Intl.NumberFormat('sv-SE', { minimumFractionDigits: 2 }).format(n);
+  if (n === null || n === undefined || isNaN(n)) return "0,00";
+  return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 };
 
 const capitalizeFirst = (text) => {
@@ -30,7 +30,11 @@ const capitalizeFirst = (text) => {
 };
 
 const decimalOnly = (text) => {
-  return text.replace(/[^0-9.,]/g, "").replace(",", ".");
+  // Tillåter siffror och gör om komma till punkt, men tillåter bara EN punkt
+  let cleaned = text.replace(",", ".").replace(/[^0-9.]/g, "");
+  const parts = cleaned.split(".");
+  if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
+  return cleaned;
 };
 
 const getTodayDate = () => {
@@ -39,36 +43,37 @@ const getTodayDate = () => {
 };
 
 export default function KostnaderScreen() {
-  const { selectedGroup, updateKostnader } = useContext(GroupsContext);
+  const { selectedProject, updateProjectData } = useContext(ProjectsContext);
   const navigation = useNavigation();
   const [kostnader, setKostnader] = useState([]);
-  const [newRow, setNewRow] = useState({
+  
+  const initialRowState = {
     info: "",
     timmar: "",
-    timpris: "",
+    timpris: "650", 
     bilkostnad: "",
-    antalBilar: "1", // ✅ Nytt fält
+    antalBilar: "1",
     datum: getTodayDate(),
-  });
+  };
+
+  const [newRow, setNewRow] = useState(initialRowState);
   const [editingIndex, setEditingIndex] = useState(null);
 
-  // Synka lokal state med context/firestore
   useEffect(() => {
-    if (selectedGroup?.kostnader) {
-      setKostnader(selectedGroup.kostnader);
+    if (selectedProject?.kostnader) {
+      setKostnader(selectedProject.kostnader);
     } else {
       setKostnader([]);
     }
-  }, [selectedGroup]);
+  }, [selectedProject]);
 
-  if (!selectedGroup) {
+  if (!selectedProject) {
     return (
       <View style={styles.centeredContainer}>
-        <Ionicons name="layers-outline" size={80} color="#ccc" />
-        <Text style={styles.noGroupText}>Ingen aktiv grupp vald</Text>
-        <Text style={styles.noGroupSubText}>Välj ett projekt på hem-skärmen först.</Text>
+        <Ionicons name="construct-outline" size={80} color="#ccc" />
+        <Text style={styles.noGroupText}>INGET AKTIVT PROJEKT VALT</Text>
         <Button 
-          title="Gå till Hem" 
+          title="GÅ TILL HEM" 
           type="primary" 
           onPress={() => navigation.navigate("Home")} 
         />
@@ -82,13 +87,19 @@ export default function KostnaderScreen() {
       return;
     }
 
+    const timmar = parseFloat(newRow.timmar) || 0;
+    const timpris = parseFloat(newRow.timpris) || 0;
+    const bilkostnad = parseFloat(newRow.bilkostnad) || 0;
+    const antalBilar = parseInt(newRow.antalBilar) || 0;
+
     const newItem = {
       info: capitalizeFirst(newRow.info.trim()),
-      timmar: parseFloat(newRow.timmar) || 0,
-      timpris: parseFloat(newRow.timpris) || 0,
-      bilkostnad: parseFloat(newRow.bilkostnad) || 0,
-      antalBilar: parseInt(newRow.antalBilar) || 1, // ✅ Spara antal bilar
+      timmar,
+      timpris,
+      bilkostnad,
+      antalBilar,
       datum: newRow.datum.trim() || getTodayDate(),
+      totalExclVat: (timmar * timpris) + (bilkostnad * antalBilar)
     };
 
     let updated;
@@ -101,18 +112,11 @@ export default function KostnaderScreen() {
     }
 
     try {
-      await updateKostnader(selectedGroup.id, updated);
-      setNewRow({ 
-        info: "", 
-        timmar: "", 
-        timpris: newItem.timpris.toString(), 
-        bilkostnad: "", 
-        antalBilar: "1",
-        datum: getTodayDate() 
-      });
+      await updateProjectData(selectedProject.id, { kostnader: updated });
+      setNewRow(initialRowState);
       Keyboard.dismiss();
     } catch (e) {
-      Alert.alert("Fel", "Kunde inte spara.");
+      Alert.alert("Fel", "Kunde inte spara till projektet.");
     }
   };
 
@@ -124,7 +128,7 @@ export default function KostnaderScreen() {
         style: "destructive", 
         onPress: async () => {
           const updated = kostnader.filter((_, i) => i !== index);
-          await updateKostnader(selectedGroup.id, updated);
+          await updateProjectData(selectedProject.id, { kostnader: updated });
         }
       }
     ]);
@@ -142,14 +146,8 @@ export default function KostnaderScreen() {
     setEditingIndex(index);
   };
 
-  // Beräkningar för InfoBox (Inkluderar antal bilar)
   const sumTimmar = kostnader.reduce((acc, it) => acc + (Number(it.timmar) || 0), 0);
-  const sumBilkostnad = kostnader.reduce((acc, it) => {
-    const bilar = Number(it.antalBilar) || 1;
-    return acc + ((Number(it.bilkostnad) || 0) * bilar);
-  }, 0);
-  const sumArbetskostnad = kostnader.reduce((acc, it) => acc + (Number(it.timmar) * Number(it.timpris) || 0), 0);
-  const totalSum = sumArbetskostnad + sumBilkostnad;
+  const totalSumExclVat = kostnader.reduce((acc, it) => acc + (Number(it.totalExclVat) || 0), 0);
 
   return (
     <KeyboardAvoidingView 
@@ -162,36 +160,36 @@ export default function KostnaderScreen() {
         ListHeaderComponent={
           <>
             <InfoBox
-              title={`Logg: ${selectedGroup.name}`}
+              title={`Arbetslogg: ${selectedProject.name}`}
               items={[
-                `Totalt timmar: ${sumTimmar} h`,
-                `Arbete: ${formatNumber(sumArbetskostnad)} kr`,
-                `Bil/Övrigt: ${formatNumber(sumBilkostnad)} kr`,
-                `TOTALT: ${formatNumber(totalSum)} kr`,
+                `Totalt arbetat: ${sumTimmar} h`,
+                `Summa exkl. moms: ${formatNumber(totalSumExclVat)} kr`,
               ]}
             />
 
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>{editingIndex !== null ? "Redigera post" : "Ny loggpost"}</Text>
+              <Text style={styles.cardTitle}>{editingIndex !== null ? "REDIGERA POST" : "NY LOGGPOST"}</Text>
               
               <View style={styles.inputRow}>
                 <TextInput
-                  placeholder="Beskrivning"
+                  placeholder="Beskrivning (t.ex. Installation)"
                   value={newRow.info}
                   onChangeText={(v) => setNewRow(s => ({ ...s, info: v }))}
                   style={[styles.input, { flex: 2 }]}
+                  placeholderTextColor="#AAA"
                 />
                 <TextInput
-                  placeholder="Datum"
+                  placeholder="ÅÅÅÅ-MM-DD"
                   value={newRow.datum}
                   onChangeText={(v) => setNewRow(s => ({ ...s, datum: v }))}
                   style={[styles.input, { flex: 1 }]}
+                  placeholderTextColor="#AAA"
                 />
               </View>
 
               <View style={styles.inputRow}>
                 <View style={styles.inputGroup}>
-                  <Text style={styles.miniLabel}>Timmar</Text>
+                  <Text style={styles.miniLabel}>TIMMAR</Text>
                   <TextInput
                     value={newRow.timmar}
                     onChangeText={(v) => setNewRow(s => ({ ...s, timmar: decimalOnly(v) }))}
@@ -200,7 +198,7 @@ export default function KostnaderScreen() {
                   />
                 </View>
                 <View style={styles.inputGroup}>
-                  <Text style={styles.miniLabel}>Pris/h</Text>
+                  <Text style={styles.miniLabel}>PRIS/H</Text>
                   <TextInput
                     value={newRow.timpris}
                     onChangeText={(v) => setNewRow(s => ({ ...s, timpris: decimalOnly(v) }))}
@@ -208,11 +206,8 @@ export default function KostnaderScreen() {
                     style={styles.input}
                   />
                 </View>
-              </View>
-
-              <View style={styles.inputRow}>
                 <View style={styles.inputGroup}>
-                  <Text style={styles.miniLabel}>Bilpris (st)</Text>
+                  <Text style={styles.miniLabel}>BILPRIS</Text>
                   <TextInput
                     value={newRow.bilkostnad}
                     onChangeText={(v) => setNewRow(s => ({ ...s, bilkostnad: decimalOnly(v) }))}
@@ -221,7 +216,7 @@ export default function KostnaderScreen() {
                   />
                 </View>
                 <View style={styles.inputGroup}>
-                  <Text style={styles.miniLabel}>Antal bilar</Text>
+                  <Text style={styles.miniLabel}>ANTAL BIL</Text>
                   <TextInput
                     value={newRow.antalBilar}
                     onChangeText={(v) => setNewRow(s => ({ ...s, antalBilar: v.replace(/[^0-9]/g, "") }))}
@@ -234,7 +229,7 @@ export default function KostnaderScreen() {
               <View style={styles.buttonRow}>
                 <View style={{ flex: 1 }}>
                   <Button 
-                    title={editingIndex !== null ? "Spara ändring" : "Lägg till"} 
+                    title={editingIndex !== null ? "SPARA ÄNDRING" : "LÄGG TILL I LOGG"} 
                     type="primary" 
                     onPress={handleSave} 
                   />
@@ -242,48 +237,41 @@ export default function KostnaderScreen() {
                 {editingIndex !== null && (
                   <View style={{ flex: 1, marginLeft: 10 }}>
                     <Button 
-                      title="Avbryt" 
+                      title="AVBRYT" 
                       type="secondary" 
                       onPress={() => {
                         setEditingIndex(null);
-                        setNewRow({ info: "", timmar: "", timpris: "", bilkostnad: "", antalBilar: "1", datum: getTodayDate() });
+                        setNewRow(initialRowState);
+                        Keyboard.dismiss();
                       }} 
                     />
                   </View>
                 )}
               </View>
             </View>
+            <Text style={styles.sectionTitle}>LOGGADE POSTER (EXKL. MOMS)</Text>
           </>
         }
-        renderItem={({ item, index }) => {
-          const bilar = Number(item.antalBilar) || 1;
-          const bilSumma = (Number(item.bilkostnad) || 0) * bilar;
-          return (
-            <View style={styles.itemRow}>
-              <View style={{ flex: 2 }}>
-                <Text style={styles.itemInfo}>{item.info}</Text>
-                <Text style={styles.itemDate}>{item.datum}</Text>
-              </View>
-              <View style={styles.itemValues}>
-                <Text style={styles.mainValue}>{item.timmar}h × {item.timpris}:-</Text>
-                {bilSumma > 0 && (
-                  <Text style={styles.subValue}>
-                    Bil: {bilSumma}:- ({bilar}st)
-                  </Text>
-                )}
-              </View>
-              <View style={styles.actions}>
-                <TouchableOpacity onPress={() => startEdit(item, index)} style={styles.actionBtn}>
-                  <Ionicons name="pencil" size={16} color={WorkaholicTheme.colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => deleteItem(index)} style={styles.actionBtn}>
-                  <Ionicons name="trash-outline" size={16} color={WorkaholicTheme.colors.error} />
-                </TouchableOpacity>
-              </View>
+        renderItem={({ item, index }) => (
+          <View style={styles.itemRow}>
+            <View style={{ flex: 2 }}>
+              <Text style={styles.itemInfo}>{item.info}</Text>
+              <Text style={styles.itemDate}>{item.datum} • {item.timmar}h á {item.timpris}:-</Text>
             </View>
-          );
-        }}
-        ListEmptyComponent={<Text style={styles.emptyText}>Inga poster loggade än.</Text>}
+            <View style={styles.itemValues}>
+              <Text style={styles.mainValue}>{formatNumber(item.totalExclVat)}:-</Text>
+            </View>
+            <View style={styles.actions}>
+              <TouchableOpacity onPress={() => startEdit(item, index)} style={styles.actionBtn}>
+                <Ionicons name="pencil" size={16} color={WorkaholicTheme.colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => deleteItem(index)} style={styles.actionBtn}>
+                <Ionicons name="trash-outline" size={16} color={WorkaholicTheme.colors.error} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        ListEmptyComponent={<Text style={styles.emptyText}>Inga poster loggade än för detta projekt.</Text>}
         contentContainerStyle={{ paddingBottom: 40 }}
       />
     </KeyboardAvoidingView>
@@ -293,22 +281,21 @@ export default function KostnaderScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 15, backgroundColor: WorkaholicTheme.colors.background },
   centeredContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  noGroupText: { fontSize: 20, fontWeight: 'bold', marginTop: 20 },
-  noGroupSubText: { textAlign: 'center', color: '#666', marginBottom: 30, marginTop: 10 },
+  noGroupText: { fontSize: 16, fontWeight: '800', marginBottom: 20, color: '#666' },
   card: { backgroundColor: "#fff", borderRadius: 15, padding: 15, marginBottom: 15, elevation: 4 },
-  cardTitle: { fontSize: 16, fontWeight: "bold", marginBottom: 10, color: WorkaholicTheme.colors.primary },
-  inputRow: { flexDirection: "row", gap: 10, marginBottom: 10 },
+  cardTitle: { fontSize: 14, fontWeight: "800", marginBottom: 15, color: WorkaholicTheme.colors.primary },
+  inputRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   inputGroup: { flex: 1 },
-  miniLabel: { fontSize: 10, color: "#888", marginBottom: 2 },
-  input: { borderWidth: 1, borderColor: "#eee", borderRadius: 8, padding: 8, backgroundColor: "#f9f9f9" },
+  miniLabel: { fontSize: 9, color: "#999", marginBottom: 4, fontWeight: '800' },
+  input: { borderWidth: 1, borderColor: "#EEE", borderRadius: 10, padding: 10, backgroundColor: "#F9F9F9", fontSize: 13, color: '#333', fontWeight: '600' },
   buttonRow: { flexDirection: 'row', marginTop: 10 },
+  sectionTitle: { fontSize: 11, fontWeight: '800', color: '#8E8E93', marginBottom: 10, marginTop: 5, letterSpacing: 0.5 },
   itemRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 12, borderRadius: 12, marginBottom: 8, elevation: 2 },
-  itemInfo: { fontWeight: "bold", fontSize: 14 },
-  itemDate: { fontSize: 11, color: "#888" },
-  itemValues: { flex: 1.5, alignItems: 'flex-end', marginRight: 10 },
-  mainValue: { fontSize: 13, fontWeight: "600" },
-  subValue: { fontSize: 11, color: WorkaholicTheme.colors.secondary },
+  itemInfo: { fontWeight: "700", fontSize: 14, color: '#333' },
+  itemDate: { fontSize: 11, color: "#888", marginTop: 2 },
+  itemValues: { flex: 1, alignItems: 'flex-end', marginRight: 10 },
+  mainValue: { fontSize: 14, fontWeight: "800", color: "#333" },
   actions: { flexDirection: "row", gap: 8 },
-  actionBtn: { padding: 10, backgroundColor: "#f5f5f5", borderRadius: 8 },
-  emptyText: { textAlign: 'center', marginTop: 20, color: "#999" }
+  actionBtn: { padding: 8, backgroundColor: "#F5F5F5", borderRadius: 8 },
+  emptyText: { textAlign: 'center', marginTop: 20, color: "#AAA", fontWeight: '600' }
 });

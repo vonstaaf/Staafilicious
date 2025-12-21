@@ -1,12 +1,12 @@
-// babel.config.js
 module.exports = function (api) {
   api.cache(true);
 
   return {
-    presets: ["babel-preset-expo"], // ✅ Expo preset
+    presets: ["babel-preset-expo"],
     plugins: [
-      // 👇 Viktigt: Reanimated måste ligga sist i plugins-arrayen
-      "react-native-reanimated/plugin",
+      // Vi tar bort worklets-pluginet då det orsakar kraschen.
+      // Reanimated hanterar det som behövs för dina Projekt.
+      "react-native-reanimated/plugin", 
     ],
   };
 };

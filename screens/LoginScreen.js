@@ -1,4 +1,3 @@
-// screens/LoginScreen.js
 import React, { useState } from "react";
 import {
   View,
@@ -32,30 +31,34 @@ export default function LoginScreen({ navigation }) {
       return;
     }
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      // Trimma email för att undvika dolda mellanslag
+      await signInWithEmailAndPassword(auth, email.trim(), password);
       logAnalyticsEvent("user_login", { method: "email" });
-      // ✅ Ingen navigation här – auth hanterar det via App.js
     } catch (error) {
-      Alert.alert("Fel vid inloggning", error.message || "Något gick fel vid inloggning.");
+      Alert.alert("Fel vid inloggning", "Kontrollera dina uppgifter och försök igen.");
     }
   };
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: WorkaholicTheme.colors.background }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+      <ScrollView 
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.container}>
           <Image
-            source={require("../assets/logo.png")}
+            source={require("../assets/workaholic_logo_white.png")}
             style={styles.logo}
             resizeMode="contain"
           />
 
-          <Text style={styles.title}>Logga in</Text>
+          <Text style={styles.title}>LOGGA IN</Text>
 
           <View style={styles.inputContainer}>
+            <Ionicons name="mail-outline" size={20} color="#999" style={{ marginRight: 10 }} />
             <TextInput
               placeholder="Email"
               value={email}
@@ -63,30 +66,33 @@ export default function LoginScreen({ navigation }) {
               autoCapitalize="none"
               keyboardType="email-address"
               style={styles.textInput}
+              placeholderTextColor="#AAA"
             />
           </View>
 
           <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color="#999" style={{ marginRight: 10 }} />
             <TextInput
               placeholder="Lösenord"
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
               style={styles.textInput}
+              placeholderTextColor="#AAA"
             />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 5 }}>
               <Ionicons
                 name={showPassword ? "eye-off-outline" : "eye-outline"}
-                size={24}
-                color={WorkaholicTheme.colors.secondary}
+                size={22}
+                color={WorkaholicTheme.colors.primary}
               />
             </TouchableOpacity>
           </View>
 
           <View style={styles.buttonContainer}>
-            <Button title="Logga in" type="primary" onPress={handleLogin} />
+            <Button title="LOGGA IN" type="primary" onPress={handleLogin} />
             <Button
-              title="Registrera nytt konto"
+              title="SKAPA NYTT KONTO"
               type="secondary"
               onPress={() => navigation.navigate("Register")}
             />
@@ -101,39 +107,47 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: "center",
-    padding: 0,
-    backgroundColor: WorkaholicTheme.colors.background,
+    padding: 30, // Mer padding för att det inte ska gå ut i kanterna
   },
   logo: {
-    width: width * 0.5,
-    height: width * 0.5,
+    width: width * 0.45,
+    height: width * 0.45,
     alignSelf: "center",
-    marginBottom: 0,
+    marginBottom: 10,
   },
   title: {
-    fontSize: 22,
-    fontWeight: "700",
-    marginBottom: 20,
+    fontSize: 20,
+    fontWeight: "800",
+    marginBottom: 30,
     color: WorkaholicTheme.colors.primary,
     textAlign: "center",
+    letterSpacing: 1,
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: WorkaholicTheme.colors.secondary,
-    borderRadius: 8,
-    backgroundColor: WorkaholicTheme.colors.surface,
-    paddingHorizontal: 10,
-    marginBottom: 12,
+    borderColor: "#EEE", // Ljusare gräns för modernare look
+    borderRadius: 12,
+    backgroundColor: "#FFF",
+    paddingHorizontal: 15,
+    marginBottom: 15,
+    height: 55, // Fast höjd för symmetri
+    elevation: 2, // Liten skugga för djup
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
   textInput: {
     flex: 1,
-    padding: 10,
-    color: WorkaholicTheme.colors.textPrimary,
+    height: "100%",
+    color: "#333",
+    fontSize: 15,
+    fontWeight: "600",
   },
   buttonContainer: {
-    marginTop: 20,
+    marginTop: 15,
     gap: 12,
   },
 });

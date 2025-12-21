@@ -1,19 +1,26 @@
-// navigation/MainTabs.js
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 
 import HomeScreen from "../screens/HomeScreen";
 import ProductsScreen from "../screens/ProductsScreen";
-import KostnadsScreen from "../screens/KostnadsScreen";
+import KostnaderScreen from "../screens/KostnaderScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import { WorkaholicTheme } from "../theme";
-import { useBadges } from "../context/BadgeContext"; // 🔑 hämta badges från context
+import { useBadges } from "../context/BadgeContext"; 
 
 const Tab = createBottomTabNavigator();
 
 export default function MainTabs() {
-  const { KostnadsCount, productsCount, notificationsCount } = useBadges();
+  // Hämtar både värden och funktioner för att kunna nollställa vid klick
+  const { 
+    KostnaderCount, 
+    productsCount, 
+    notificationsCount,
+    setKostnaderCount,
+    setProductsCount,
+    setNotificationsCount 
+  } = useBadges();
 
   return (
     <Tab.Navigator
@@ -22,14 +29,14 @@ export default function MainTabs() {
           let iconName;
           if (route.name === "Home") iconName = "home-outline";
           else if (route.name === "Products") iconName = "cube-outline";
-          else if (route.name === "Kostnads") iconName = "swap-horizontal-outline";
+          else if (route.name === "Kostnader") iconName = "swap-horizontal-outline";
           else if (route.name === "Profile") iconName = "person-outline";
           return <Ionicons name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: WorkaholicTheme.colors.primary,
         tabBarInactiveTintColor: WorkaholicTheme.colors.secondary,
         tabBarStyle: {
-          backgroundColor: WorkaholicTheme.colors.surface, // snyggare bakgrund
+          backgroundColor: WorkaholicTheme.colors.surface,
           borderTopColor: WorkaholicTheme.colors.secondary,
         },
         headerShown: false,
@@ -49,21 +56,29 @@ export default function MainTabs() {
           title: "Produkter",
           tabBarBadge: productsCount > 0 ? productsCount : null,
           tabBarBadgeStyle: {
-            backgroundColor: WorkaholicTheme.colors.primary, // 🔧 badge i din primärfärg
+            backgroundColor: WorkaholicTheme.colors.primary,
             color: "white",
           },
         }}
+        // 🔑 Nollställ badge när användaren trycker på fliken
+        listeners={{
+          tabPress: () => setProductsCount(0),
+        }}
       />
       <Tab.Screen
-        name="Kostnads"
-        component={KostnadsScreen}
+        name="Kostnader"
+        component={KostnaderScreen}
         options={{
           title: "Kostnader",
-          tabBarBadge: KostnadsCount > 0 ? KostnadsCount : null,
+          tabBarBadge: KostnaderCount > 0 ? KostnaderCount : null,
           tabBarBadgeStyle: {
-            backgroundColor: WorkaholicTheme.colors.error, // 🔧 röd badge för pending
+            backgroundColor: WorkaholicTheme.colors.error,
             color: "white",
           },
+        }}
+        // 🔑 Nollställ badge när användaren trycker på fliken
+        listeners={{
+          tabPress: () => setKostnaderCount(0),
         }}
       />
       <Tab.Screen
@@ -73,9 +88,13 @@ export default function MainTabs() {
           title: "Profil",
           tabBarBadge: notificationsCount > 0 ? notificationsCount : null,
           tabBarBadgeStyle: {
-            backgroundColor: WorkaholicTheme.colors.secondary, // 🔧 sekundärfärg för notiser
+            backgroundColor: WorkaholicTheme.colors.secondary,
             color: "white",
           },
+        }}
+        // 🔑 Nollställ även för profilen om det finns notiser
+        listeners={{
+          tabPress: () => setNotificationsCount(0),
         }}
       />
     </Tab.Navigator>
