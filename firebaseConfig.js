@@ -1,5 +1,5 @@
 // firebaseConfig.js
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import {
   getAuth,
   initializeAuth,
@@ -11,9 +11,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics, logEvent, isSupported } from "firebase/analytics";
 import { Platform } from "react-native";
+// VIKTIGT: Vi behåller importen, men tar bort användningen för att felsöka kraschen
 import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 
-// 🔑 Byt ut dessa placeholders mot riktiga värden från Firebase Console
+// 🔑 Dina Firebase-nycklar (hardkodade, vilket är OK för tillfället)
 const firebaseConfig = {
   apiKey: "AIzaSyDvomXmrLbI6s5uGsrWAeQU-idJYfCRrq8",
   authDomain: "staafilicious.firebaseapp.com",
@@ -24,22 +25,27 @@ const firebaseConfig = {
   measurementId: "G-D67MDTNMDB"
 };
 
-// 🚀 Initiera Firebase
-const app = initializeApp(firebaseConfig);
+// 🚀 Initiera Firebase (Säkerställer att appen inte initieras två gånger)
+let app;
+if (getApps().length === 0) {
+    app = initializeApp(firebaseConfig);
+} else {
+    app = getApps()[0];
+}
 
-// 🛡️ App Check (olika för web och native)
+
+// 🛡️ App Check (KRITISK FIX: Används endast på webb)
 if (Platform.OS === "web") {
-  // Web använder reCAPTCHA V3 – hämta din site key från Firebase Console
+  // Web använder reCAPTCHA V3
   initializeAppCheck(app, {
     provider: new ReCaptchaV3Provider("din-site-key-från-Firebase"),
     isTokenAutoRefreshEnabled: true,
   });
 } else {
-  // Native (Android/iOS) använder Play Integrity / DeviceCheck/App Attest
-  initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider("dummy-key"), // behövs inte egentligen för native
-    isTokenAutoRefreshEnabled: true,
-  });
+  // NATIVE FIX: Vi hoppar över App Check på Android/iOS helt och hållet
+  // för att undvika den Native Crash som orsakas av felaktig provider-konfiguration
+  // eller saknade Native-moduler i EAS Build.
+  console.log("App Check initiering hoppades över på Native för att undvika krasch.");
 }
 
 // ✅ Auth med persistence (olika för web och mobil)
@@ -56,10 +62,10 @@ if (Platform.OS === "web") {
 }
 export { auth };
 
-// 📦 Firestore (molndatabas för grupper, produkter, Kostnader)
+// 📦 Firestore
 export const db = getFirestore(app);
 
-// 📊 Analytics (kontrollerar stöd innan initiering)
+// 📊 Analytics
 let analytics;
 isSupported()
   .then((supported) => {

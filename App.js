@@ -16,6 +16,7 @@ import LoadingScreen from "./screens/LoadingScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 
+// HÄR IMPORTERAS DEN KRITISKA FILEN
 import { auth } from "./firebaseConfig";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 
@@ -190,11 +191,22 @@ export default function App() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (usr) => {
-      setUser(usr);
-      if (initializing) setInitializing(false);
-    });
-    return unsubscribe;
+    // VIKTIGT: Lägg till try/catch runt onAuthStateChanged om auth-objektet
+    // skulle vara null/undefined pga krasch i firebaseConfig.js
+    try {
+        const unsubscribe = onAuthStateChanged(auth, (usr) => {
+          setUser(usr);
+          if (initializing) setInitializing(false);
+        });
+        return unsubscribe;
+    } catch (e) {
+        // Om Firebase-initialiseringen kraschade, sätt initializing till false
+        // så att appen kan visa AuthStack istället för att fastna på LoadingScreen.
+        console.error("Firebase init failed, skipping auth check.", e);
+        if (initializing) setInitializing(false);
+        // Returnera en tom funktion för att uppfylla useEffect-kravet
+        return () => {}; 
+    }
   }, [initializing]);
 
   if (initializing) {

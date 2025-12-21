@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "staafilicious-frontend": "file:.."
+  }
+}

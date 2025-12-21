@@ -1,4 +1,3 @@
-// screens/ProductsScreen.js
 import InfoBox from "../components/InfoBox";
 import React, { useContext, useEffect, useState } from "react";
 import {
@@ -9,6 +8,8 @@ import {
   Alert,
   StyleSheet,
   TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import { GroupsContext } from "../context/GroupsContext";
 import Button from "../components/Button";
@@ -17,13 +18,13 @@ import { WorkaholicTheme } from "../theme";
 // Hjälpfunktioner
 const formatNumber = (n) => {
   if (n === null || n === undefined || isNaN(n)) return "0";
-  return parseFloat(Number(n).toFixed(2)).toString();
+  return new Intl.NumberFormat('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 };
 
 const computeTotal = (purchasePrice, markup, vat) => {
-  const p = Number(purchasePrice) || 0;
-  const m = Number(markup) || 0;
-  const v = Number(vat) || 0;
+  const p = parseFloat(purchasePrice) || 0;
+  const m = parseFloat(markup) || 0;
+  const v = parseFloat(vat) || 0;
   return p * (1 + m / 100) * (1 + v / 100);
 };
 
@@ -32,9 +33,9 @@ const capitalizeFirst = (text) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
-const numericOnly = (text) => {
-  if (!text) return "";
-  return text.replace(/[^0-9]/g, "");
+// Tillåter siffror och punkt/komma för decimaler
+const decimalOnly = (text) => {
+  return text.replace(/[^0-9.,]/g, "").replace(",", ".");
 };
 
 export default function ProductsScreen() {
@@ -50,35 +51,34 @@ export default function ProductsScreen() {
   });
   const [editingIndex, setEditingIndex] = useState(null);
 
+  // Synka lokalt state med molndatan när gruppen uppdateras (t.ex. av annan användare)
   useEffect(() => {
-    if (!selectedGroup) {
-      Alert.alert("Ingen grupp vald", "Gå tillbaka och välj en grupp först.");
-      return;
+    if (selectedGroup?.products) {
+      setProducts(selectedGroup.products);
     }
-    setProducts(selectedGroup?.products || []);
-  }, [selectedGroup]);
+  }, [selectedGroup?.products]);
 
-  const addProduct = async () => {
+  const saveProduct = async () => {
     if (!selectedGroup) return;
     if (!newRow.name.trim() || !newRow.eNumber.trim()) {
       Alert.alert("Fel", "Ange både produktnamn och E‑nummer.");
       return;
     }
 
-    const p = Number(newRow.purchasePrice) || 0;
-    const m = Number(newRow.markup) || 0;
-    const v = Number(newRow.vat) || 0;
-    const q = Number(newRow.quantity) || 1;
+    const p = parseFloat(newRow.purchasePrice) || 0;
+    const m = parseFloat(newRow.markup) || 0;
+    const v = parseFloat(newRow.vat) || 0;
+    const q = parseInt(newRow.quantity) || 1;
     const total = computeTotal(p, m, v);
 
     const newItem = {
       name: capitalizeFirst(newRow.name.trim()),
-      eNumber: numericOnly(newRow.eNumber.trim()),
+      eNumber: newRow.eNumber.trim(),
       purchasePrice: p,
       markup: m,
       vat: v,
       quantity: q,
-      totalPrice: total,
+      totalPrice: total, // Pris per styck inkl. allt
     };
 
     let updated;
@@ -86,33 +86,32 @@ export default function ProductsScreen() {
       updated = [...products];
       updated[editingIndex] = newItem;
       setEditingIndex(null);
-      Alert.alert("Ändrad", `${newItem.name} har uppdaterats.`);
     } else {
       updated = [...products, newItem];
-      Alert.alert("Produkt tillagd", `${newItem.name} har lagts till.`);
     }
 
-    setProducts(updated);
+    // Uppdatera molnet (Context anropar Firestore)
     await updateProducts(selectedGroup.id, updated);
 
-    setNewRow({
-      name: "",
-      eNumber: "",
-      purchasePrice: "",
-      markup: "",
-      vat: "",
-      quantity: "1",
-    });
+    // Nollställ formulär
+    setNewRow({ name: "", eNumber: "", purchasePrice: "", markup: "", vat: "", quantity: "1" });
   };
 
   const deleteProduct = async (index) => {
-    const updated = products.filter((_, i) => i !== index);
-    setProducts(updated);
-    await updateProducts(selectedGroup.id, updated);
-    Alert.alert("Raderad", "Produkten har tagits bort.");
+    Alert.alert("Radera", "Vill du ta bort produkten?", [
+      { text: "Avbryt", style: "cancel" },
+      { 
+        text: "Radera", 
+        style: "destructive", 
+        onPress: async () => {
+          const updated = products.filter((_, i) => i !== index);
+          await updateProducts(selectedGroup.id, updated);
+        } 
+      }
+    ]);
   };
 
-  const editProduct = (item, index) => {
+  const startEdit = (item, index) => {
     setNewRow({
       name: item.name,
       eNumber: String(item.eNumber),
@@ -124,203 +123,186 @@ export default function ProductsScreen() {
     setEditingIndex(index);
   };
 
-  const sumPurchase = products.reduce(
-    (acc, it) => acc + (Number(it.purchasePrice) || 0) * (Number(it.quantity) || 1),
-    0
-  );
+  // Summeringar
+  const sumPurchase = products.reduce((acc, it) => acc + (it.purchasePrice * it.quantity), 0);
+  const sumTotal = products.reduce((acc, it) => acc + (it.totalPrice * it.quantity), 0);
+  const profit = sumTotal - sumPurchase;
 
-  const sumTotal = products.reduce(
-    (acc, it) => acc + (Number(it.totalPrice) || 0) * (Number(it.quantity) || 1),
-    0
-  );
-
-  // ✅ Differens mellan totalpris och inköpspris
-  const diffPurchaseVsTotal = sumTotal - sumPurchase;
-    return (
-    <View style={styles.container}>
-      {/* Informationsbox ovanför listan */}
+  return (
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === "ios" ? "padding" : "height"} 
+      style={styles.container}
+    >
       <InfoBox
-        title={`Grupp: ${selectedGroup?.name} (Kod: ${selectedGroup?.code})`}
+        title={`${selectedGroup?.name || "Ingen grupp"}`}
         items={[
-          `Antal produkter: ${products.length}`,
-          `Summa inköpspris: ${formatNumber(sumPurchase)} kr`,
-          `Summa totalpris: ${formatNumber(sumTotal)} kr`,
-          `Vinst: ${formatNumber(diffPurchaseVsTotal)} kr`,
+          `Antal artiklar: ${products.length}`,
+          `Totalt inköp: ${formatNumber(sumPurchase)} kr`,
+          `Totalt ut: ${formatNumber(sumTotal)} kr`,
+          `Vinst: ${formatNumber(profit)} kr`,
         ]}
       />
 
-      {/* Inmatningsraden */}
       <View style={styles.card}>
-        <View style={styles.row}>
-          <View style={styles.flexItem}>
-            <Text style={styles.label}>Produktnamn</Text>
-            <TextInput
-              value={newRow.name}
-              onChangeText={(v) => setNewRow((s) => ({ ...s, name: capitalizeFirst(v) }))}
-              style={styles.input}
-              placeholder="t.ex. 2-Vägs uttag"
-            />
-          </View>
-          <View style={styles.flexItem}>
-            <Text style={styles.label}>E‑nummer</Text>
-            <TextInput
-              value={newRow.eNumber}
-              onChangeText={(v) => setNewRow((s) => ({ ...s, eNumber: numericOnly(v) }))}
-              keyboardType="numeric"
-              style={styles.input}
-              placeholder="t.ex. 4999998"
-            />
-          </View>
+        <Text style={styles.cardTitle}>{editingIndex !== null ? "Redigera produkt" : "Ny produkt"}</Text>
+        
+        <View style={styles.inputRow}>
+          <TextInput
+            placeholder="Produktnamn"
+            value={newRow.name}
+            onChangeText={(v) => setNewRow(s => ({ ...s, name: v }))}
+            style={[styles.input, { flex: 2 }]}
+          />
+          <TextInput
+            placeholder="E-nummer"
+            value={newRow.eNumber}
+            onChangeText={(v) => setNewRow(s => ({ ...s, eNumber: v }))}
+            keyboardType="numeric"
+            style={[styles.input, { flex: 1 }]}
+          />
         </View>
 
-        <View style={styles.row}>
-          <View style={styles.flexItem}>
-            <Text style={styles.label}>Antal</Text>
+        <View style={styles.inputRow}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.miniLabel}>Antal</Text>
             <TextInput
               value={newRow.quantity}
-              onChangeText={(v) => setNewRow((s) => ({ ...s, quantity: numericOnly(v) }))}
+              onChangeText={(v) => setNewRow(s => ({ ...s, quantity: decimalOnly(v) }))}
               keyboardType="numeric"
               style={styles.input}
-              placeholder="t.ex. 5"
             />
           </View>
-          <View style={styles.flexItem}>
-            <Text style={styles.label}>Inköpspris</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.miniLabel}>Inköp</Text>
             <TextInput
               value={newRow.purchasePrice}
-              onChangeText={(v) => setNewRow((s) => ({ ...s, purchasePrice: numericOnly(v) }))}
+              onChangeText={(v) => setNewRow(s => ({ ...s, purchasePrice: decimalOnly(v) }))}
               keyboardType="numeric"
               style={styles.input}
-              placeholder="t.ex. 250"
             />
           </View>
-          <View style={styles.flexItem}>
-            <Text style={styles.label}>Påslag (%)</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.miniLabel}>Påslag %</Text>
             <TextInput
               value={newRow.markup}
-              onChangeText={(v) => setNewRow((s) => ({ ...s, markup: numericOnly(v) }))}
+              onChangeText={(v) => setNewRow(s => ({ ...s, markup: decimalOnly(v) }))}
               keyboardType="numeric"
               style={styles.input}
-              placeholder="t.ex. 25"
             />
           </View>
-          <View style={styles.flexItem}>
-            <Text style={styles.label}>Moms (%)</Text>
+          <View style={styles.inputGroup}>
+            <Text style={styles.miniLabel}>Moms %</Text>
             <TextInput
               value={newRow.vat}
-              onChangeText={(v) => setNewRow((s) => ({ ...s, vat: numericOnly(v) }))}
+              onChangeText={(v) => setNewRow(s => ({ ...s, vat: decimalOnly(v) }))}
               keyboardType="numeric"
               style={styles.input}
-              placeholder="t.ex. 25"
             />
           </View>
         </View>
 
-        <Button
-          title={editingIndex !== null ? "Spara ändring" : "Lägg till produkt"}
-          type="primary"
-          onPress={addProduct}
-        />
+        <View style={styles.buttonRow}>
+          <View style={{ flex: 1 }}>
+             <Button 
+                title={editingIndex !== null ? "Spara" : "Lägg till"} 
+                type="primary" 
+                onPress={saveProduct} 
+              />
+          </View>
+          {editingIndex !== null && (
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Button 
+                title="Avbryt" 
+                type="secondary" 
+                onPress={() => {
+                  setEditingIndex(null);
+                  setNewRow({ name: "", eNumber: "", purchasePrice: "", markup: "", vat: "", quantity: "1" });
+                }} 
+              />
+            </View>
+          )}
+        </View>
       </View>
 
-      {/* Rubrikrad */}
       <FlatList
         data={products}
-        keyExtractor={(item, i) => item.eNumber || i.toString()}
+        keyExtractor={(_, i) => i.toString()}
         ListHeaderComponent={
-          <View style={styles.slimRowHeader}>
-            <Text style={styles.slimHeader}>Produktnamn</Text>
-            <Text style={styles.slimHeader}>E‑nummer</Text>
-            <Text style={styles.slimHeader}>Antal</Text>
-            <Text style={styles.slimHeader}>Inköpspris</Text>
-            <Text style={styles.slimHeader}>Påslag %</Text>
-            <Text style={styles.slimHeader}>Moms %</Text>
-            <Text style={styles.slimHeader}></Text>
+          <View style={styles.headerRow}>
+            <Text style={[styles.headerText, { flex: 2, textAlign: 'left' }]}>Produkt</Text>
+            <Text style={styles.headerText}>Antal</Text>
+            <Text style={styles.headerText}>Totalt</Text>
+            <Text style={styles.headerText}></Text>
           </View>
         }
-        stickyHeaderIndices={[0]}
         renderItem={({ item, index }) => (
-          <View style={styles.slimRow}>
-            <Text style={styles.slimText}>{item.name}</Text>
-            <Text style={styles.slimText}>{item.eNumber}</Text>
-            <Text style={styles.slimText}>{item.quantity}</Text>
-            <Text style={styles.slimText}>{item.purchasePrice} kr</Text>
-            <Text style={styles.slimText}>{item.markup} %</Text>
-            <Text style={styles.slimText}>{item.vat} %</Text>
-
-            <View style={styles.iconContainer}>
-              <TouchableOpacity onPress={() => editProduct(item, index)} style={styles.iconButton}>
-                <Text style={styles.icon}>✏️</Text>
+          <View style={styles.itemRow}>
+            <View style={{ flex: 2 }}>
+              <Text style={styles.itemName}>{item.name}</Text>
+              <Text style={styles.itemSub}>{item.eNumber}</Text>
+            </View>
+            <Text style={styles.itemValue}>{item.quantity}st</Text>
+            <Text style={styles.itemValue}>{formatNumber(item.totalPrice * item.quantity)}:-</Text>
+            
+            <View style={styles.actions}>
+              <TouchableOpacity onPress={() => startEdit(item, index)} style={styles.actionBtn}>
+                <Text>✏️</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => deleteProduct(index)} style={styles.iconButton}>
-                <Text style={styles.icon}>🗑️</Text>
+              <TouchableOpacity onPress={() => deleteProduct(index)} style={styles.actionBtn}>
+                <Text>🗑️</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: WorkaholicTheme.colors.background },
-
+  container: { flex: 1, padding: 15, backgroundColor: WorkaholicTheme.colors.background },
   card: {
-    backgroundColor: WorkaholicTheme.colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    backgroundColor: "#fff",
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 15,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
   },
-  row: { flexDirection: "row", justifyContent: "space-between", gap: 12, marginBottom: 12 },
-  flexItem: { flex: 1 },
-  label: { fontWeight: "600", color: WorkaholicTheme.colors.textPrimary, marginBottom: 4 },
+  cardTitle: { fontSize: 16, fontWeight: "bold", marginBottom: 10, color: WorkaholicTheme.colors.primary },
+  inputRow: { flexDirection: "row", gap: 10, marginBottom: 10 },
+  inputGroup: { flex: 1 },
+  miniLabel: { fontSize: 10, color: "#888", marginBottom: 2 },
   input: {
     borderWidth: 1,
-    borderColor: WorkaholicTheme.colors.secondary,
+    borderColor: "#eee",
     borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: "#fff",
-    color: WorkaholicTheme.colors.textPrimary,
-  },
-
-  slimRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderColor: "#ddd",
-  },
-  slimText: { fontSize: 14, color: WorkaholicTheme.colors.textPrimary, flex: 1, textAlign: "center" },
-
-  slimRowHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 6,
-    borderBottomWidth: 2,
-    borderColor: "#aaa",
-    backgroundColor: "#f7f7f7",
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-  },
-  slimHeader: {
+    padding: 8,
+    backgroundColor: "#f9f9f9",
     fontSize: 14,
-    fontWeight: "700",
-    color: WorkaholicTheme.colors.textPrimary,
-    flex: 1,
-    textAlign: "center",
   },
-
-  iconContainer: { flexDirection: "row", justifyContent: "flex-end", flex: 1 },
-  iconButton: {
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: "#f0f0f0",
-    marginHorizontal: 2,
+  buttonRow: { flexDirection: 'row', marginTop: 5 },
+  headerRow: {
+    flexDirection: "row",
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderColor: "#ccc",
+    marginBottom: 5,
   },
-  icon: { fontSize: 18 },
+  headerText: { flex: 1, fontWeight: "bold", fontSize: 12, textAlign: 'center', color: "#666" },
+  itemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  itemName: { fontWeight: "bold", fontSize: 14 },
+  itemSub: { fontSize: 11, color: "#888" },
+  itemValue: { flex: 1, textAlign: 'center', fontSize: 13 },
+  actions: { flexDirection: "row", gap: 10 },
+  actionBtn: { padding: 5, backgroundColor: "#f0f0f0", borderRadius: 5 }
 });

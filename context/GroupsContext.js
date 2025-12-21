@@ -1,252 +1,172 @@
-// context/GroupsContext.js
-import React, { createContext, useState, useEffect } from "react";
+import React, { createContext, useState, useEffect, useCallback } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db, auth } from "../firebaseConfig";
-import {
-  collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  query,
-  where,
-  onSnapshot,
-  getDocs,
+import { onAuthStateChanged } from "firebase/auth"; // ✅ Importera denna!
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  doc, 
+  deleteDoc, 
+  getDocs 
 } from "firebase/firestore";
-
-const capitalizeFirst = (text) => {
-  if (!text) return "";
-  return text.charAt(0).toUpperCase() + text.slice(1);
-};
-
-export const calculateTotal = (items) =>
-  items.reduce(
-    (acc, it) =>
-      acc +
-      (Number(it.purchasePrice) || 0) *
-        (1 + (Number(it.markup) || 0) / 100) *
-        (1 + (Number(it.vat) || 0) / 100) *
-        (Number(it.quantity) || 1),
-    0
-  );
 
 export const GroupsContext = createContext();
 
 export const GroupsProvider = ({ children }) => {
   const [groups, setGroups] = useState([]);
-  const [selectedGroup, setSelectedGroup] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [selectedGroup, setSelectedGroupState] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // 🔄 Hämta grupper där användaren är medlem
+  // 1. Ladda sparad grupp från AsyncStorage
   useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
+    const loadSavedGroup = async () => {
+      try {
+        const saved = await AsyncStorage.getItem("lastSelectedGroup");
+        if (saved) setSelectedGroupState(JSON.parse(saved));
+      } catch (e) {
+        console.error("Context: AsyncStorage error", e);
+      }
+    };
+    loadSavedGroup();
+  }, []);
 
-    const q = query(
-      collection(db, "groups"),
-      where("members", "array-contains", user.uid)
-    );
+  // 2. Hantera Firebase-lyssnare och Inloggningsstatus
+  useEffect(() => {
+    // Vi lyssnar på inloggningsstatus för att veta NÄR vi ska starta Firestore-lyssnaren
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setGroups([]);
+        setLoading(false);
+        return;
+      }
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const groupsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
+      // Starta Firestore-lyssnaren när vi har en säker användare
+      const q = query(
+        collection(db, "groups"),
+        where("members", "array-contains", user.uid)
+      );
+
+      const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+        const groupsData = snapshot.docs.map(doc => ({ 
+          id: doc.id, 
           ...doc.data(),
+          kostnader: doc.data().kostnader || [] 
         }));
+        
         setGroups(groupsData);
 
-        if (selectedGroup) {
-          const updatedSel = groupsData.find((g) => g.id === selectedGroup.id);
-          if (updatedSel) setSelectedGroup(updatedSel);
-        }
-      },
-      (error) => {
-        console.error("Fel vid hämtning av grupper:", error.message);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [selectedGroup]);
-
-  // ✅ Skapa grupp – ägaren blir första medlem
-  const createGroup = async (name, code) => {
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        console.error("Ingen användare inloggad – kan inte skapa grupp.");
-        return;
-      }
-
-      if (!name.trim() || !code.trim()) {
-        console.error("Fel: Gruppnamn och kod krävs.");
-        return;
-      }
-
-      setLoading(true);
-
-      const newGroup = {
-        name: capitalizeFirst(name),
-        code,
-        ownerUid: user.uid,
-        members: [user.uid], // 👈 ägaren som första medlem
-        products: [],
-        kostnader: [],
-        createdAt: new Date().toISOString(),
-      };
-
-      const docRef = await addDoc(collection(db, "groups"), newGroup);
-      console.log("Ny grupp skapad med id:", docRef.id);
-    } catch (error) {
-      console.error("Fel vid skapande av grupp:", error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ✅ Importera grupp – lägg till användaren i members
-  const importGroup = async (code) => {
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        console.error("Ingen användare inloggad – kan inte importera grupp.");
-        return;
-      }
-
-      if (!code.trim()) {
-        console.error("Fel: Gruppkod krävs.");
-        return;
-      }
-
-      setLoading(true);
-
-      const q = query(collection(db, "groups"), where("code", "==", code));
-      const snapshot = await getDocs(q);
-
-      if (snapshot.empty) {
-        console.error("Ingen grupp hittad med koden:", code);
-        return;
-      }
-
-      const groupDoc = snapshot.docs[0];
-      const groupData = groupDoc.data();
-
-      const members = groupData.members || [];
-      if (!members.includes(user.uid)) {
-        await updateDoc(groupDoc.ref, {
-          members: [...members, user.uid],
+        // Synka vald grupp
+        setSelectedGroupState(prev => {
+          if (!prev) return null;
+          const updated = groupsData.find(g => g.id === prev.id);
+          return updated || null;
         });
-        console.log("Användaren lades till i gruppens members.");
-      } else {
-        console.log("Användaren är redan medlem i gruppen.");
-      }
 
-      console.log("Grupp importerad:", groupData.name);
-    } catch (error) {
-      console.error("Fel vid import av grupp:", error.message);
-    } finally {
-      setLoading(false);
+        setLoading(false); // ✅ Nu körs denna garanterat
+      }, (error) => {
+        console.error("Firestore Error:", error);
+        setLoading(false);
+      });
+
+      return () => unsubscribeSnapshot();
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  // --- LOGIKFUNKTIONER ---
+
+  const setSelectedGroup = async (group) => {
+    try {
+      setSelectedGroupState(group);
+      if (group) {
+        await AsyncStorage.setItem("lastSelectedGroup", JSON.stringify(group));
+      } else {
+        await AsyncStorage.removeItem("lastSelectedGroup");
+      }
+    } catch (e) {
+      console.error("Context: Error saving group choice", e);
     }
   };
+
+  const createGroup = async (name, code) => {
+    if (!auth.currentUser) return;
+    return await addDoc(collection(db, "groups"), {
+      name,
+      code,
+      owner: auth.currentUser.uid,
+      members: [auth.currentUser.uid],
+      kostnader: [],
+      createdAt: new Date(),
+    });
+  };
+
+  const importGroup = async (code) => {
+    if (!auth.currentUser) return;
+    const q = query(collection(db, "groups"), where("code", "==", code));
+    const querySnapshot = await getDocs(q);
+    
+    if (!querySnapshot.empty) {
+      const groupDoc = querySnapshot.docs[0];
+      const data = groupDoc.data();
+      if (!data.members.includes(auth.currentUser.uid)) {
+        await updateDoc(doc(db, "groups", groupDoc.id), {
+          members: [...data.members, auth.currentUser.uid]
+        });
+      }
+    } else {
+      throw new Error("Koden är ogiltig");
+    }
+  };
+
+  const updateKostnader = async (groupId, updatedKostnader) => {
+    try {
+      const groupRef = doc(db, "groups", groupId);
+      await updateDoc(groupRef, { kostnader: updatedKostnader });
+    } catch (e) {
+      console.error("Context: Error updating costs", e);
+      throw e;
+    }
+  };
+
+  const calculateTotal = useCallback((kostnader) => {
+    if (!kostnader || !Array.isArray(kostnader)) return 0;
+    return kostnader.reduce((acc, item) => {
+      const arbete = (Number(item.timmar) || 0) * (Number(item.timpris) || 0);
+      const bilar = Number(item.antalBilar) || 1;
+      const bilTotal = (Number(item.bilkostnad) || 0) * bilar;
+      return acc + arbete + bilTotal;
+    }, 0);
+  }, []);
 
   const renameGroup = async (id, newName) => {
-    try {
-      if (!newName.trim()) {
-        console.error("Fel: Nytt namn krävs.");
-        return;
-      }
-
-      setLoading(true);
-      const groupRef = doc(db, "groups", id);
-      await updateDoc(groupRef, { name: capitalizeFirst(newName) });
-
-      setGroups((prev) =>
-        prev.map((g) =>
-          g.id === id ? { ...g, name: capitalizeFirst(newName) } : g
-        )
-      );
-
-      setSelectedGroup((prevSel) =>
-        prevSel?.id === id
-          ? { ...prevSel, name: capitalizeFirst(newName) }
-          : prevSel
-      );
-    } catch (error) {
-      console.error("Fel vid uppdatering av grupp:", error.message);
-    } finally {
-      setLoading(false);
-    }
+    await updateDoc(doc(db, "groups", id), { name: newName });
   };
 
   const deleteGroup = async (id) => {
-    try {
-      setLoading(true);
-      const groupRef = doc(db, "groups", id);
-      await deleteDoc(groupRef);
-      setGroups((prev) => prev.filter((g) => g.id !== id));
-      setSelectedGroup((prevSel) => (prevSel?.id === id ? null : prevSel));
-    } catch (error) {
-      console.error("Fel vid borttagning av grupp:", error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const updateProducts = async (groupId, products) => {
-    try {
-      setLoading(true);
-      const groupRef = doc(db, "groups", groupId);
-      await updateDoc(groupRef, { products });
-
-      setGroups((prev) =>
-        prev.map((g) => (g.id === groupId ? { ...g, products } : g))
-      );
-
-      setSelectedGroup((prevSel) =>
-        prevSel?.id === groupId ? { ...prevSel, products } : prevSel
-      );
-    } catch (error) {
-      console.error("Fel vid uppdatering av produkter:", error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const updateKostnader = async (groupId, kostnader) => {
-    try {
-      setLoading(true);
-      const groupRef = doc(db, "groups", groupId);
-      await updateDoc(groupRef, { kostnader });
-
-      setGroups((prev) =>
-        prev.map((g) => (g.id === groupId ? { ...g, kostnader } : g))
-      );
-
-      setSelectedGroup((prevSel) =>
-        prevSel?.id === groupId ? { ...prevSel, kostnader } : prevSel
-      );
-    } catch (error) {
-      console.error("Fel vid uppdatering av kostnader:", error.message);
-    } finally {
-      setLoading(false);
+    await deleteDoc(doc(db, "groups", id));
+    if (selectedGroup?.id === id) {
+      setSelectedGroup(null);
     }
   };
 
   return (
-    <GroupsContext.Provider
-      value={{
-        groups,
-        selectedGroup,
-        setSelectedGroup,
-        createGroup,
-        importGroup,
-        renameGroup,
-        deleteGroup,
-        updateProducts,
-        updateKostnader,
-        calculateTotal,
-        loading,
-      }}
-    >
+    <GroupsContext.Provider value={{ 
+      groups, 
+      selectedGroup, 
+      setSelectedGroup, 
+      createGroup, 
+      importGroup, 
+      renameGroup, 
+      deleteGroup, 
+      updateKostnader, 
+      calculateTotal, 
+      loading 
+    }}>
       {children}
     </GroupsContext.Provider>
   );

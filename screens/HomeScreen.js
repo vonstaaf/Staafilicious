@@ -1,37 +1,19 @@
 import React, { useContext, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  Modal,
-  Alert,
-  Share,
-  StyleSheet,
-} from "react-native"; // 👈 ActivityIndicator borttagen här
+  View, Text, TextInput, FlatList, TouchableOpacity,
+  Modal, Alert, Share, StyleSheet
+} from "react-native";
 import * as Clipboard from "expo-clipboard";
+import { useNavigation } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import { GroupsContext } from "../context/GroupsContext";
 import { auth } from "../firebaseConfig";
 import { signOut } from "firebase/auth";
 import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 
-const capitalizeFirst = (text) => {
-  if (!text) return "";
-  return text.charAt(0).toUpperCase() + text.slice(1);
-};
-
-const generateGroupCode = (length = 8) => {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let code = "";
-  for (let i = 0; i < length; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-};
-
 export default function HomeScreen() {
+  const navigation = useNavigation();
   const {
     groups,
     selectedGroup,
@@ -40,7 +22,6 @@ export default function HomeScreen() {
     importGroup,
     renameGroup,
     deleteGroup,
-    // 👈 loading finns kvar i context men används inte längre
   } = useContext(GroupsContext);
 
   const [groupName, setGroupName] = useState("");
@@ -50,200 +31,109 @@ export default function HomeScreen() {
   const [activeGroup, setActiveGroup] = useState(null);
   const [newName, setNewName] = useState("");
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      Alert.alert("Utloggad", "Du är nu utloggad.");
-    } catch (error) {
-      Alert.alert("Fel vid utloggning", error.message || "Något gick fel.");
-    }
+  const handleSelectGroup = () => {
+    setSelectedGroup(activeGroup);
+    setMenuVisible(false);
+    // ✅ Förbättring 1: Navigera automatiskt
+    navigation.navigate("Kostnads"); 
   };
 
   const handleCreateGroup = async () => {
+    if (!groupName.trim()) return Alert.alert("Fel", "Ange ett gruppnamn.");
     try {
-      if (!groupName.trim()) {
-        Alert.alert("Fel", "Ange ett gruppnamn.");
-        return;
-      }
-      const code = generateGroupCode(8);
-      await createGroup(capitalizeFirst(groupName.trim()), code);
+      const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+      await createGroup(groupName.trim(), code);
       setGroupName("");
-      Alert.alert(
-        "Grupp skapad",
-        `Gruppen "${capitalizeFirst(groupName)}" har skapats med kod: ${code}`
-      );
-    } catch (error) {
-      Alert.alert("Fel vid skapande", error.message || "Något gick fel.");
-    }
+    } catch (error) { Alert.alert("Fel", "Kunde inte skapa grupp."); }
   };
 
   const handleImportGroup = async () => {
+    if (!groupCode.trim()) return Alert.alert("Fel", "Ange en gruppkod.");
     try {
-      if (!groupCode.trim()) {
-        Alert.alert("Fel", "Ange en gruppkod.");
-        return;
-      }
       await importGroup(groupCode.trim().toUpperCase());
       setGroupCode("");
-      Alert.alert(
-        "Grupp importerad",
-        `Grupp med kod ${groupCode.trim().toUpperCase()} har importerats.`
-      );
-    } catch (error) {
-      Alert.alert("Fel vid import", error.message || "Något gick fel.");
-    }
+    } catch (error) { Alert.alert("Fel", "Koden hittades inte."); }
   };
-    const openMenu = (group) => {
-    setActiveGroup(group);
-    setMenuVisible(true);
-  };
-
-  const closeMenu = () => {
-    setMenuVisible(false);
-    setActiveGroup(null);
-  };
-
-  const handleSelectGroup = () => {
-    setSelectedGroup(activeGroup);
-    closeMenu();
-  };
-
-  const handleShareCode = () => {
-    if (!activeGroup) return;
-    Share.share({
-      message: `Gå med i gruppen "${capitalizeFirst(activeGroup.name)}" med kod: ${activeGroup.code}`,
-    });
-    closeMenu();
-  };
-
-  const handleCopyCode = async () => {
-    if (!activeGroup) return;
-    await Clipboard.setStringAsync(activeGroup.code);
-    Alert.alert("Kopierat!", `Gruppkod ${activeGroup.code} är kopierad.`);
-    closeMenu();
-  };
-
-  const handleDeleteGroup = () => {
-    if (!activeGroup) return;
-    Alert.alert("Ta bort grupp", "Är du säker?", [
-      { text: "Avbryt", style: "cancel" },
-      {
-        text: "Ta bort",
-        style: "destructive",
-        onPress: () => {
-          deleteGroup(activeGroup.id);
-          if (selectedGroup?.id === activeGroup.id) setSelectedGroup(null);
-          closeMenu();
-          Alert.alert("Grupp borttagen", "Gruppen har tagits bort.");
-        },
-      },
-    ]);
-  };
-
-  const handleRename = async () => {
-    if (!activeGroup) return;
-    if (!newName.trim()) {
-      Alert.alert("Fel", "Ange ett nytt namn.");
-      return;
-    }
-    await renameGroup(activeGroup.id, capitalizeFirst(newName.trim()));
-    setNewName("");
-    setRenameVisible(false);
-    Alert.alert("Grupp uppdaterad", "Gruppnamnet har ändrats.");
-  };
-
-  const Header = () => (
-    <View style={styles.infoBox}>
-      {selectedGroup ? (
-        <View>
-          <Text style={styles.infoTitle}>
-            Grupp: {capitalizeFirst(selectedGroup.name)}
-          </Text>
-          <Text style={styles.infoText}>Kod: {selectedGroup.code}</Text>
-        </View>
-      ) : (
-        <Text style={styles.infoTitle}>Ingen grupp vald</Text>
-      )}
-      <View style={styles.logoutButton}>
-        <Button title="Logga ut" type="secondary" onPress={handleLogout} />
-      </View>
-    </View>
-  );
 
   return (
     <View style={styles.container}>
-      <Header />
+      <View style={styles.infoBox}>
+        <View>
+          <Text style={styles.infoTitle}>
+            {selectedGroup ? `Aktiv: ${selectedGroup.name}` : "Ingen grupp vald"}
+          </Text>
+          {selectedGroup && <Text style={styles.infoText}>Kod: {selectedGroup.code}</Text>}
+        </View>
+        <TouchableOpacity onPress={() => signOut(auth)}>
+          <Text style={styles.logoutText}>Logga ut</Text>
+        </TouchableOpacity>
+      </View>
 
-      {/* Skapa grupp */}
-      <TextInput
-        placeholder="Gruppnamn"
-        value={groupName}
-        onChangeText={setGroupName}
-        style={styles.input}
-      />
-      <Button title="Skapa grupp" type="primary" onPress={handleCreateGroup} />
+      <View style={styles.actionSection}>
+        <TextInput 
+          placeholder="Nytt gruppnamn" 
+          value={groupName} 
+          onChangeText={setGroupName} 
+          style={styles.input} 
+        />
+        <Button title="Skapa ny grupp" type="primary" onPress={handleCreateGroup} />
+      </View>
 
-      {/* Importera grupp */}
-      <TextInput
-        placeholder="Gruppkod"
-        value={groupCode}
-        onChangeText={setGroupCode}
-        style={styles.input}
-      />
-      <Button
-        title="Importera grupp"
-        type="secondary"
-        onPress={handleImportGroup}
-      />
+      <View style={styles.actionSection}>
+        <TextInput 
+          placeholder="Ange gruppkod" 
+          value={groupCode} 
+          onChangeText={setGroupCode} 
+          style={styles.input} 
+          autoCapitalize="characters"
+        />
+        <Button title="Gå med i grupp" type="secondary" onPress={handleImportGroup} />
+      </View>
 
-      {/* 👋 Loading-indikator helt borttagen */}
-
-      {/* Lista grupper */}
+      <Text style={styles.sectionTitle}>Dina grupper</Text>
+      
       <FlatList
         data={groups}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.groupItem}
-            onPress={() => openMenu(item)}
-          >
-            <Text style={styles.groupText}>
-              {capitalizeFirst(item.name)} ({item.code})
-            </Text>
-          </TouchableOpacity>
-        )}
-        ListEmptyComponent={<Text style={styles.groupText}>Inga grupper ännu</Text>}
+        renderItem={({ item }) => {
+          const isSelected = selectedGroup?.id === item.id;
+          return (
+            <TouchableOpacity
+              style={[styles.groupItem, isSelected && styles.selectedItem]}
+              onPress={() => { setActiveGroup(item); setMenuVisible(true); }}
+            >
+              <View style={styles.groupRow}>
+                <View>
+                  <Text style={[styles.groupText, isSelected && styles.selectedText]}>{item.name}</Text>
+                  <Text style={styles.groupCodeSub}>{item.code}</Text>
+                </View>
+                {/* ✅ Förbättring 2: Visuell bock */}
+                {isSelected && (
+                  <Ionicons name="checkmark-circle" size={26} color={WorkaholicTheme.colors.primary} />
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        }}
       />
 
-      {/* Gruppmeny */}
+      {/* Modal för gruppalternativ */}
       <Modal visible={menuVisible} transparent animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {activeGroup ? capitalizeFirst(activeGroup.name) : ""}
-            </Text>
-            <Button title="Välj grupp" type="primary" onPress={handleSelectGroup} />
-            <Button title="Dela kod" type="secondary" onPress={handleShareCode} />
-            <Button title="Kopiera kod" type="secondary" onPress={handleCopyCode} />
+            <Text style={styles.modalTitle}>{activeGroup?.name}</Text>
+            <Button title="Välj som aktiv grupp" type="primary" onPress={handleSelectGroup} />
+            <Button title="Dela kod" type="secondary" onPress={() => { Share.share({ message: `Kod: ${activeGroup.code}` }); setMenuVisible(false); }} />
             <Button title="Byt namn" type="secondary" onPress={() => setRenameVisible(true)} />
-            <Button title="Ta bort grupp" type="secondary" onPress={handleDeleteGroup} />
-            <Button title="Stäng" type="secondary" onPress={closeMenu} />
-          </View>
-        </View>
-      </Modal>
-
-      {/* Byt namn-modal */}
-      <Modal visible={renameVisible} transparent animationType="fade">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <TextInput
-              placeholder="Nytt namn"
-              value={newName}
-              onChangeText={setNewName}
-              style={styles.input}
-            />
-            <Button title="Spara" type="primary" onPress={handleRename} />
-            <Button title="Avbryt" type="secondary" onPress={() => setRenameVisible(false)} />
+            <Button title="Radera" type="secondary" onPress={() => {
+              Alert.alert("Radera?", "Är du säker?", [
+                { text: "Nej" },
+                { text: "Ja", onPress: () => { deleteGroup(activeGroup.id); setMenuVisible(false); } }
+              ]);
+            }} />
+            <TouchableOpacity onPress={() => setMenuVisible(false)} style={styles.closeBtn}>
+              <Text style={styles.closeBtnText}>Stäng</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -252,76 +142,23 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: WorkaholicTheme.colors.background,
-  },
-  infoBox: {
-    backgroundColor: WorkaholicTheme.colors.surface,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  infoTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: WorkaholicTheme.colors.textPrimary,
-  },
-  infoText: {
-    fontSize: 18,
-    color: WorkaholicTheme.colors.textSecondary,
-    marginTop: 4,
-  },
-  logoutButton: {
-    marginTop: 12,
-    alignSelf: "flex-start",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: WorkaholicTheme.colors.secondary,
-    padding: 10,
-    marginBottom: 12,
-    borderRadius: 8,
-    backgroundColor: WorkaholicTheme.colors.surface,
-    color: WorkaholicTheme.colors.textPrimary,
-  },
-  groupItem: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    marginBottom: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  groupText: {
-    fontSize: 16,
-    color: WorkaholicTheme.colors.textPrimary,
-    textAlign: "center",
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  modalContent: {
-    margin: 20,
-    padding: 20,
-    backgroundColor: WorkaholicTheme.colors.surface,
-    borderRadius: 12,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 12,
-    color: WorkaholicTheme.colors.primary,
-    textAlign: "center",
-  },
+  container: { flex: 1, padding: 20, backgroundColor: WorkaholicTheme.colors.background },
+  infoBox: { backgroundColor: "#fff", padding: 20, borderRadius: 15, marginBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 2 },
+  infoTitle: { fontSize: 18, fontWeight: "bold", color: WorkaholicTheme.colors.primary },
+  infoText: { fontSize: 13, color: "#666" },
+  logoutText: { color: WorkaholicTheme.colors.error, fontWeight: "bold" },
+  actionSection: { marginBottom: 15 },
+  input: { backgroundColor: "#fff", padding: 12, borderRadius: 10, borderWidth: 1, borderColor: "#ddd", marginBottom: 8 },
+  sectionTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 10 },
+  groupItem: { backgroundColor: "#fff", padding: 15, borderRadius: 12, marginBottom: 10, borderLeftWidth: 6, borderLeftColor: "#ccc" },
+  selectedItem: { borderLeftColor: WorkaholicTheme.colors.primary, backgroundColor: "#f0f9ff" },
+  groupRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  groupText: { fontSize: 16, fontWeight: "600" },
+  selectedText: { color: WorkaholicTheme.colors.primary },
+  groupCodeSub: { fontSize: 12, color: "#888" },
+  modalContainer: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
+  modalContent: { backgroundColor: "#fff", padding: 25, borderTopLeftRadius: 25, borderTopRightRadius: 25 },
+  modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
+  closeBtn: { marginTop: 10, padding: 10 },
+  closeBtnText: { textAlign: "center", color: "#666", fontWeight: "bold" }
 });
