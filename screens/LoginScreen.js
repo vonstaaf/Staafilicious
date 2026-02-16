@@ -13,7 +13,7 @@ import {
   ScrollView,
 } from "react-native";
 import { auth, logAnalyticsEvent } from "../firebaseConfig";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; // Tillagd: sendPasswordResetEmail
 import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,11 +31,25 @@ export default function LoginScreen({ navigation }) {
       return;
     }
     try {
-      // Trimma email för att undvika dolda mellanslag
       await signInWithEmailAndPassword(auth, email.trim(), password);
       logAnalyticsEvent("user_login", { method: "email" });
     } catch (error) {
       Alert.alert("Fel vid inloggning", "Kontrollera dina uppgifter och försök igen.");
+    }
+  };
+
+  // Ny funktion för att återställa lösenord
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      Alert.alert("E-post saknas", "Skriv in din e-postadress i fältet ovan först så skickar vi en återställningslänk.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      Alert.alert("Mejl skickat", "En länk för att återställa ditt lösenord har skickats till din e-post.");
+      logAnalyticsEvent("forgot_password_click", { email: email.trim() });
+    } catch (error) {
+      Alert.alert("Kunde inte skicka mejl", "Kontrollera att e-postadressen är korrekt.");
     }
   };
 
@@ -50,7 +64,7 @@ export default function LoginScreen({ navigation }) {
       >
         <View style={styles.container}>
           <Image
-            source={require("../assets/workaholic_logo_white.png")}
+            source={require("../assets/logo.png")}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -96,6 +110,14 @@ export default function LoginScreen({ navigation }) {
               type="secondary"
               onPress={() => navigation.navigate("Register")}
             />
+            
+            {/* Tillagd: Glömt lösenord-länk */}
+            <TouchableOpacity 
+              onPress={handleForgotPassword} 
+              style={styles.forgotPasswordContainer}
+            >
+              <Text style={styles.forgotPasswordText}>Glömt lösenordet?</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -107,11 +129,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: "center",
-    padding: 30, // Mer padding för att det inte ska gå ut i kanterna
+    padding: 30,
   },
   logo: {
-    width: width * 0.45,
-    height: width * 0.45,
+    width: width * 0.65,
+    height: width * 0.65,
     alignSelf: "center",
     marginBottom: 10,
   },
@@ -127,13 +149,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#EEE", // Ljusare gräns för modernare look
+    borderColor: "#EEE",
     borderRadius: 12,
     backgroundColor: "#FFF",
     paddingHorizontal: 15,
     marginBottom: 15,
-    height: 55, // Fast höjd för symmetri
-    elevation: 2, // Liten skugga för djup
+    height: 55,
+    elevation: 2,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -149,5 +171,17 @@ const styles = StyleSheet.create({
   buttonContainer: {
     marginTop: 15,
     gap: 12,
+  },
+  // Nya stilar för glömt lösenord
+  forgotPasswordContainer: {
+    marginTop: 5,
+    alignSelf: "center",
+    padding: 10,
+  },
+  forgotPasswordText: {
+    color: WorkaholicTheme.colors.primary,
+    fontWeight: "600",
+    fontSize: 14,
+    textDecorationLine: "underline",
   },
 });

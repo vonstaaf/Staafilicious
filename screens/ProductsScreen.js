@@ -28,10 +28,20 @@ const capitalizeFirst = (text) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
+// Förbättrad decimal-hantering som tillåter punkt/komma under inmatning
 const decimalOnly = (text) => {
-  let cleaned = text.replace(",", ".").replace(/[^0-9.]/g, "");
+  // Ersätt komma med punkt för logiken
+  let cleaned = text.replace(",", ".");
+  
+  // Tillåt siffror och max en punkt. 
+  // Rensar bort allt utom siffror och den första punkten den hittar.
+  cleaned = cleaned.replace(/[^0-9.]/g, "");
+  
   const parts = cleaned.split(".");
-  if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
+  if (parts.length > 2) {
+    // Om användaren skriver en andra punkt, behåll bara allt fram till den andra punkten
+    cleaned = parts[0] + "." + parts[1];
+  }
   return cleaned;
 };
 
@@ -41,9 +51,9 @@ export default function ProductsScreen() {
   
   const initialRowState = {
     name: "",
-    articleNumber: "", // Uppdaterad från eNumber
+    articleNumber: "",
     purchasePrice: "",
-    markup: "15", 
+    markup: "25", 
     quantity: "1",
   };
 
@@ -65,6 +75,7 @@ export default function ProductsScreen() {
       return;
     }
 
+    // Konvertera till siffror för beräkning
     const p = parseFloat(newRow.purchasePrice) || 0;
     const m = parseFloat(newRow.markup) || 0;
     const q = parseFloat(newRow.quantity) || 0;
@@ -74,7 +85,7 @@ export default function ProductsScreen() {
 
     const newItem = {
       name: capitalizeFirst(newRow.name.trim()),
-      articleNumber: newRow.articleNumber.trim() || "-", // Uppdaterad nyckel
+      articleNumber: newRow.articleNumber.trim() || "-",
       purchasePrice: p,
       markup: m,
       quantity: q,
@@ -182,7 +193,7 @@ export default function ProductsScreen() {
                   <TextInput
                     value={newRow.quantity}
                     onChangeText={(v) => setNewRow(s => ({ ...s, quantity: decimalOnly(v) }))}
-                    keyboardType="numeric"
+                    keyboardType="decimal-pad"
                     style={styles.input}
                   />
                 </View>
@@ -191,8 +202,9 @@ export default function ProductsScreen() {
                   <TextInput
                     value={newRow.purchasePrice}
                     onChangeText={(v) => setNewRow(s => ({ ...s, purchasePrice: decimalOnly(v) }))}
-                    keyboardType="numeric"
+                    keyboardType="decimal-pad"
                     style={styles.input}
+                    placeholder="0.00"
                   />
                 </View>
                 <View style={styles.inputGroup}>
@@ -200,7 +212,7 @@ export default function ProductsScreen() {
                   <TextInput
                     value={newRow.markup}
                     onChangeText={(v) => setNewRow(s => ({ ...s, markup: decimalOnly(v) }))}
-                    keyboardType="numeric"
+                    keyboardType="decimal-pad"
                     style={styles.input}
                   />
                 </View>

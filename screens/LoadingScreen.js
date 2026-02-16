@@ -1,29 +1,26 @@
 // screens/LoadingScreen.js
 import React from "react";
 import { View, Text, ActivityIndicator, StyleSheet, Image } from "react-native";
-import { WorkaholicTheme } from "../theme"; // 🔑 Workaholic färger
+import { WorkaholicTheme } from "../theme"; 
 
 export default function LoadingScreen() {
   return (
     <View style={styles.container}>
-      {/* 🔑 Logotyp */}
+      {/* 🔑 Ändrad från icon.png till logo.png för att matcha din asset-mapp */}
       <Image
-        source={require("../assets/icon.png")}
+        source={require("../assets/logo.png")} 
         style={styles.logo}
         resizeMode="contain"
       />
 
-      {/* 📄 Appnamn */}
       <Text style={styles.title}>Workaholic</Text>
 
-      {/* 🔄 Spinner */}
       <ActivityIndicator
         size="large"
         color={WorkaholicTheme.colors.primary}
         style={styles.spinner}
       />
 
-      {/* 📄 Text */}
       <Text style={styles.text}>Laddar din app...</Text>
     </View>
   );
@@ -35,16 +32,16 @@ const styles = StyleSheet.create({
     backgroundColor: WorkaholicTheme.colors.background,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 20, // ✅ lite padding för bättre layout
+    paddingHorizontal: 20,
   },
   logo: {
-    width: 140, // ✅ något större logga för bättre synlighet
+    width: 140, 
     height: 140,
     marginBottom: 25,
   },
   title: {
     fontSize: 28,
-    fontWeight: "700", // ✅ konsekvent med övriga titlar
+    fontWeight: "700", 
     color: WorkaholicTheme.colors.primary,
     marginBottom: 20,
     textAlign: "center",
@@ -55,6 +52,6 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 16,
     color: WorkaholicTheme.colors.textSecondary,
-    textAlign: "center", // ✅ centrerad text
+    textAlign: "center",
   },
 });

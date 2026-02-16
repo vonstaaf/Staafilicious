@@ -50,7 +50,7 @@ export default function KostnaderScreen() {
   const initialRowState = {
     info: "",
     timmar: "",
-    timpris: "650", 
+    timpris: "750", 
     bilkostnad: "",
     antalBilar: "1",
     datum: getTodayDate(),
