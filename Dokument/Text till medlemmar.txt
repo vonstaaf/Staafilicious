@@ -1,0 +1,19 @@
+Nu ligger den nya versionen av Workaholic ute för testning. För att vi ska kunna lansera appen på riktigt behöver vi hjälp av er att testa den under 14 dagar.
+
+Viktigt: För att din testning ska räknas måste du först gå med via webblänken och sedan ladda ner appen.
+
+Gör så här:
+
+Gå med i testet: Klicka på länken här för att godkänna att du är testare: 👉https://play.google.com/apps/testing/com.vonstaaf.staafiliciousfrontend
+
+Ladda ner appen: När du har godkänt kan du klicka dig vidare till Google Play Store för att ladda ner Workaholic (eller använd länken nedan): 👉https://play.google.com/store/apps/details?id=com.vonstaaf.staafiliciousfrontend
+
+Att tänka på:
+
+Håll appen installerad: För att vi ska klara Googles krav måste du ha appen kvar på mobilen i minst 14 dagar i sträck.
+
+Projekt: Testa gärna att skapa ett nytt Projekt och ladda upp bilder för att se att allt flyter på.
+
+Logotyp: Kolla så att din logotyp sparas korrekt i appen.
+
+Tack för att du hjälper till! / Fredrik

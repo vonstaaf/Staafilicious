@@ -11,14 +11,14 @@ import {
   Platform,
   Keyboard
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
 import InfoBox from "../components/InfoBox";
 import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 
-// Hjälpfunktioner
+// --- HJÄLPFUNKTIONER ---
 const formatNumber = (n) => {
   if (n === null || n === undefined || isNaN(n)) return "0,00";
   return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -30,7 +30,6 @@ const capitalizeFirst = (text) => {
 };
 
 const decimalOnly = (text) => {
-  // Tillåter siffror och gör om komma till punkt, men tillåter bara EN punkt
   let cleaned = text.replace(",", ".").replace(/[^0-9.]/g, "");
   const parts = cleaned.split(".");
   if (parts.length > 2) cleaned = parts[0] + "." + parts.slice(1).join("");
@@ -38,22 +37,23 @@ const decimalOnly = (text) => {
 };
 
 const getTodayDate = () => {
-  const d = new Date();
-  return d.toISOString().split("T")[0];
+  return new Date().toLocaleDateString('sv-SE');
 };
 
-export default function KostnaderScreen() {
-  const { selectedProject, updateProjectData } = useContext(ProjectsContext);
-  const navigation = useNavigation();
-  const [kostnader, setKostnader] = useState([]);
-  
+export default function KostnaderScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
+  const { selectedProject, updateProject } = useContext(ProjectsContext);
+  const [entries, setEntries] = useState([]);
+
+  // --- PUNKT 9: UTÖKAT STATE FÖR ALLA FÄLT ---
   const initialRowState = {
-    info: "",
-    timmar: "",
-    timpris: "750", 
-    bilkostnad: "",
-    antalBilar: "1",
-    datum: getTodayDate(),
+    date: getTodayDate(),
+    description: "",
+    hours: "",
+    hourPrice: "0",
+    cars: "0",
+    carCost: "0",
+    markup: "0",
   };
 
   const [newRow, setNewRow] = useState(initialRowState);
@@ -61,74 +61,77 @@ export default function KostnaderScreen() {
 
   useEffect(() => {
     if (selectedProject?.kostnader) {
-      setKostnader(selectedProject.kostnader);
+      setEntries(selectedProject.kostnader);
     } else {
-      setKostnader([]);
+      setEntries([]);
     }
   }, [selectedProject]);
 
+  // --- PUNKT 8: SKYDD OM INGET PROJEKT ÄR VALT ---
   if (!selectedProject) {
     return (
-      <View style={styles.centeredContainer}>
-        <Ionicons name="construct-outline" size={80} color="#ccc" />
-        <Text style={styles.noGroupText}>INGET AKTIVT PROJEKT VALT</Text>
-        <Button 
-          title="GÅ TILL HEM" 
-          type="primary" 
-          onPress={() => navigation.navigate("Home")} 
-        />
+      <View style={[styles.centeredContainer, { paddingTop: insets.top }]}>
+        <Ionicons name="calculator-outline" size={80} color="#CCC" />
+        <Text style={styles.noProjectText}>INGET PROJEKT VALT</Text>
+        <Text style={styles.noProjectSub}>
+          Välj ett projekt i listan för att kunna registrera tider och kostnader.
+        </Text>
+        <TouchableOpacity 
+          style={styles.goBackBtn} 
+          onPress={() => navigation.navigate("Home")}
+        >
+          <Text style={styles.goBackBtnText}>GÅ TILL PROJEKTLISTAN</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  const handleSave = async () => {
-    if (!newRow.info.trim() || !newRow.timmar || !newRow.timpris) {
-      Alert.alert("Information saknas", "Beskrivning, timmar och timpris krävs.");
+  const saveEntry = async () => {
+    if (!selectedProject || !newRow.description.trim()) {
+      Alert.alert("Information", "Beskrivning krävs.");
       return;
     }
 
-    const timmar = parseFloat(newRow.timmar) || 0;
-    const timpris = parseFloat(newRow.timpris) || 0;
-    const bilkostnad = parseFloat(newRow.bilkostnad) || 0;
-    const antalBilar = parseInt(newRow.antalBilar) || 0;
+    // Konvertera strängar till tal för beräkning
+    const h = parseFloat(newRow.hours) || 0;
+    const hp = parseFloat(newRow.hourPrice) || 0;
+    const b = parseFloat(newRow.cars) || 0;
+    const bc = parseFloat(newRow.carCost) || 0;
+    const m = parseFloat(newRow.markup) || 0;
 
-    const newItem = {
-      info: capitalizeFirst(newRow.info.trim()),
-      timmar,
-      timpris,
-      bilkostnad,
-      antalBilar,
-      datum: newRow.datum.trim() || getTodayDate(),
-      totalExclVat: (timmar * timpris) + (bilkostnad * antalBilar)
+    // Räkna ut radens totala kostnad (Punkt 1 Logik)
+    const rowTotal = (h * hp) + (b * bc) + m;
+
+    const item = {
+      ...newRow,
+      description: capitalizeFirst(newRow.description.trim()),
+      hours: h,
+      hourPrice: hp,
+      cars: b,
+      carCost: bc,
+      markup: m,
+      total: rowTotal, // Vi sparar totalen direkt för enklare summering senare
     };
 
-    let updated;
-    if (editingIndex !== null) {
-      updated = [...kostnader];
-      updated[editingIndex] = newItem;
-      setEditingIndex(null);
-    } else {
-      updated = [newItem, ...kostnader];
-    }
+    let updated = editingIndex !== null ? [...entries] : [item, ...entries];
+    if (editingIndex !== null) updated[editingIndex] = item;
 
     try {
-      await updateProjectData(selectedProject.id, { kostnader: updated });
+      await updateProject(selectedProject.id, { kostnader: updated });
       setNewRow(initialRowState);
+      setEditingIndex(null);
       Keyboard.dismiss();
     } catch (e) {
-      Alert.alert("Fel", "Kunde inte spara till projektet.");
+      Alert.alert("Fel", "Kunde inte spara rader.");
     }
   };
 
-  const deleteItem = async (index) => {
-    Alert.alert("Radera", "Vill du ta bort denna post?", [
+  const deleteEntry = (index) => {
+    Alert.alert("Radera", "Vill du ta bort raden från loggen?", [
       { text: "Avbryt", style: "cancel" },
-      { 
-        text: "Radera", 
-        style: "destructive", 
-        onPress: async () => {
-          const updated = kostnader.filter((_, i) => i !== index);
-          await updateProjectData(selectedProject.id, { kostnader: updated });
+      { text: "Radera", style: "destructive", onPress: async () => {
+          const updated = entries.filter((_, i) => i !== index);
+          await updateProject(selectedProject.id, { kostnader: updated });
         }
       }
     ]);
@@ -136,152 +139,181 @@ export default function KostnaderScreen() {
 
   const startEdit = (item, index) => {
     setNewRow({
-      info: item.info,
-      timmar: String(item.timmar),
-      timpris: String(item.timpris),
-      bilkostnad: String(item.bilkostnad || ""),
-      antalBilar: String(item.antalBilar || "1"),
-      datum: item.datum,
+      ...item,
+      hours: String(item.hours),
+      hourPrice: String(item.hourPrice || "0"),
+      cars: String(item.cars || "0"),
+      carCost: String(item.carCost || "0"),
+      markup: String(item.markup || "0"),
     });
     setEditingIndex(index);
   };
 
-  const sumTimmar = kostnader.reduce((acc, it) => acc + (Number(it.timmar) || 0), 0);
-  const totalSumExclVat = kostnader.reduce((acc, it) => acc + (Number(it.totalExclVat) || 0), 0);
+  const totalSum = entries.reduce((acc, it) => acc + (parseFloat(it.total) || 0), 0);
+  const formattedProjectName = selectedProject ? capitalizeFirst(selectedProject.name) : "";
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === "ios" ? "padding" : "height"} 
-      style={styles.container}
-    >
-      <FlatList
-        data={kostnader}
-        keyExtractor={(_, i) => i.toString()}
-        ListHeaderComponent={
-          <>
-            <InfoBox
-              title={`Arbetslogg: ${selectedProject.name}`}
-              items={[
-                `Totalt arbetat: ${sumTimmar} h`,
-                `Summa exkl. moms: ${formatNumber(totalSumExclVat)} kr`,
-              ]}
-            />
+    <View style={{ flex: 1, backgroundColor: WorkaholicTheme.colors.background }}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : "height"} 
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+      >
+        <FlatList
+          data={entries}
+          keyExtractor={(_, i) => i.toString()}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ padding: 15, paddingBottom: insets.bottom + 100 }}
+          ListHeaderComponent={
+            <>
+              <InfoBox 
+                title="Arbetslogg & Kostnader" 
+                items={[`Värde: ${formatNumber(totalSum)} kr`, `Projekt: ${formattedProjectName}`]} 
+              />
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>{editingIndex !== null ? "REDIGERA RAD" : "NY REGISTRERING"}</Text>
+                
+                <View style={styles.inputRow}>
+                   <View style={{flex: 1.5}}>
+                      <Text style={styles.miniLabel}>DATUM</Text>
+                      <TextInput 
+                        value={newRow.date} 
+                        onChangeText={v => setNewRow(s => ({...s, date: v}))} 
+                        style={styles.input} 
+                      />
+                   </View>
+                   <View style={{flex: 3}}>
+                      <Text style={styles.miniLabel}>BESKRIVNING</Text>
+                      <TextInput
+                        placeholder="Arbetsmoment..."
+                        value={newRow.description}
+                        onChangeText={(v) => setNewRow(s => ({ ...s, description: v }))}
+                        style={styles.input}
+                      />
+                   </View>
+                </View>
 
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>{editingIndex !== null ? "REDIGERA POST" : "NY LOGGPOST"}</Text>
-              
-              <View style={styles.inputRow}>
-                <TextInput
-                  placeholder="Beskrivning (t.ex. Installation)"
-                  value={newRow.info}
-                  onChangeText={(v) => setNewRow(s => ({ ...s, info: v }))}
-                  style={[styles.input, { flex: 2 }]}
-                  placeholderTextColor="#AAA"
-                />
-                <TextInput
-                  placeholder="ÅÅÅÅ-MM-DD"
-                  value={newRow.datum}
-                  onChangeText={(v) => setNewRow(s => ({ ...s, datum: v }))}
-                  style={[styles.input, { flex: 1 }]}
-                  placeholderTextColor="#AAA"
-                />
-              </View>
-
-              <View style={styles.inputRow}>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.miniLabel}>TIMMAR</Text>
-                  <TextInput
-                    value={newRow.timmar}
-                    onChangeText={(v) => setNewRow(s => ({ ...s, timmar: decimalOnly(v) }))}
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.miniLabel}>PRIS/H</Text>
-                  <TextInput
-                    value={newRow.timpris}
-                    onChangeText={(v) => setNewRow(s => ({ ...s, timpris: decimalOnly(v) }))}
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.miniLabel}>BILPRIS</Text>
-                  <TextInput
-                    value={newRow.bilkostnad}
-                    onChangeText={(v) => setNewRow(s => ({ ...s, bilkostnad: decimalOnly(v) }))}
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.miniLabel}>ANTAL BIL</Text>
-                  <TextInput
-                    value={newRow.antalBilar}
-                    onChangeText={(v) => setNewRow(s => ({ ...s, antalBilar: v.replace(/[^0-9]/g, "") }))}
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.buttonRow}>
-                <View style={{ flex: 1 }}>
-                  <Button 
-                    title={editingIndex !== null ? "SPARA ÄNDRING" : "LÄGG TILL I LOGG"} 
-                    type="primary" 
-                    onPress={handleSave} 
-                  />
-                </View>
-                {editingIndex !== null && (
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Button 
-                      title="AVBRYT" 
-                      type="secondary" 
-                      onPress={() => {
-                        setEditingIndex(null);
-                        setNewRow(initialRowState);
-                        Keyboard.dismiss();
-                      }} 
+                <View style={styles.inputRow}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.miniLabel}>TIMMAR</Text>
+                    <TextInput 
+                      keyboardType="decimal-pad" 
+                      value={newRow.hours} 
+                      onChangeText={v => setNewRow(s => ({...s, hours: decimalOnly(v)}))} 
+                      style={styles.input} 
                     />
                   </View>
-                )}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.miniLabel}>TIMPRIS</Text>
+                    <TextInput 
+                      keyboardType="decimal-pad" 
+                      value={newRow.hourPrice} 
+                      onChangeText={v => setNewRow(s => ({...s, hourPrice: decimalOnly(v)}))} 
+                      style={styles.input} 
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputRow}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.miniLabel}>BILAR</Text>
+                    <TextInput 
+                      keyboardType="decimal-pad" 
+                      value={newRow.cars} 
+                      onChangeText={v => setNewRow(s => ({...s, cars: decimalOnly(v)}))} 
+                      style={styles.input} 
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.miniLabel}>BILKOSTNAD</Text>
+                    <TextInput 
+                      keyboardType="decimal-pad" 
+                      value={newRow.carCost} 
+                      onChangeText={v => setNewRow(s => ({...s, carCost: decimalOnly(v)}))} 
+                      style={styles.input} 
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.miniLabel}>PÅSLAG %</Text>
+                     <TextInput keyboardType="decimal-pad" value={newRow.markup} onChangeText={v => setNewRow(s => ({...s, markup: decimalOnly(v)}))} style={styles.input} />
+                     </View>
+                </View>
+
+                <View style={styles.buttonRow}>
+                    <View style={{flex: 1}}>
+                        <Button title={editingIndex !== null ? "UPPDATERA RAD" : "LÄGG TILL I LOGG"} type="primary" onPress={saveEntry} />
+                    </View>
+                    {editingIndex !== null && (
+                        <TouchableOpacity style={{ marginLeft: 15, padding: 10 }} onPress={() => { setEditingIndex(null); setNewRow(initialRowState); }}>
+                            <Text style={{color: '#666', fontWeight: '600'}}>Avbryt</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+              </View>
+              <Text style={styles.sectionTitle}>TIDIGARE REGISTRERINGAR</Text>
+            </>
+          }
+          renderItem={({ item, index }) => (
+            <View style={styles.itemRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.itemInfo}>{item.description}</Text>
+                <Text style={styles.itemSub}>
+                  {item.date} • {item.hours}h ({item.hourPrice}:-) • {item.cars} bil • {formatNumber(item.total)} kr
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 15 }}>
+                <TouchableOpacity onPress={() => startEdit(item, index)}>
+                  <Ionicons name="pencil" size={20} color={WorkaholicTheme.colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => deleteEntry(index)}>
+                  <Ionicons name="trash-outline" size={20} color={WorkaholicTheme.colors.error} />
+                </TouchableOpacity>
               </View>
             </View>
-            <Text style={styles.sectionTitle}>LOGGADE POSTER (EXKL. MOMS)</Text>
-          </>
-        }
-        renderItem={({ item, index }) => (
-          <View style={styles.itemRow}>
-            <View style={{ flex: 2 }}>
-              <Text style={styles.itemInfo}>{item.info}</Text>
-              <Text style={styles.itemDate}>{item.datum} • {item.timmar}h á {item.timpris}:-</Text>
-            </View>
-            <View style={styles.itemValues}>
-              <Text style={styles.mainValue}>{formatNumber(item.totalExclVat)}:-</Text>
-            </View>
-            <View style={styles.actions}>
-              <TouchableOpacity onPress={() => startEdit(item, index)} style={styles.actionBtn}>
-                <Ionicons name="pencil" size={16} color={WorkaholicTheme.colors.primary} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => deleteItem(index)} style={styles.actionBtn}>
-                <Ionicons name="trash-outline" size={16} color={WorkaholicTheme.colors.error} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-        ListEmptyComponent={<Text style={styles.emptyText}>Inga poster loggade än för detta projekt.</Text>}
-        contentContainerStyle={{ paddingBottom: 40 }}
-      />
-    </KeyboardAvoidingView>
+          )}
+          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 30, color: '#999', fontWeight: '600' }}>Inga registreringar än.</Text>}
+        />
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 15, backgroundColor: WorkaholicTheme.colors.background },
-  centeredContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  noGroupText: { fontSize: 16, fontWeight: '800', marginBottom: 20, color: '#666' },
+  // --- NYA STILAR FÖR PUNKT 8 ---
+  centeredContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    backgroundColor: '#F8F9FB', 
+    padding: 30 
+  },
+  noProjectText: { 
+    fontSize: 20, 
+    fontWeight: '900', 
+    color: '#1C1C1E', 
+    marginTop: 20 
+  },
+  noProjectSub: { 
+    fontSize: 14, 
+    color: '#8E8E93', 
+    textAlign: 'center', 
+    marginTop: 10, 
+    lineHeight: 20 
+  },
+  goBackBtn: {
+    marginTop: 25,
+    backgroundColor: WorkaholicTheme.colors.primary,
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    elevation: 2
+  },
+  goBackBtnText: {
+    color: '#FFF',
+    fontWeight: '800',
+    fontSize: 14
+  },
+  // --- EXISTERANDE STILAR ---
   card: { backgroundColor: "#fff", borderRadius: 15, padding: 15, marginBottom: 15, elevation: 4 },
   cardTitle: { fontSize: 14, fontWeight: "800", marginBottom: 15, color: WorkaholicTheme.colors.primary },
   inputRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
@@ -290,12 +322,7 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: "#EEE", borderRadius: 10, padding: 10, backgroundColor: "#F9F9F9", fontSize: 13, color: '#333', fontWeight: '600' },
   buttonRow: { flexDirection: 'row', marginTop: 10 },
   sectionTitle: { fontSize: 11, fontWeight: '800', color: '#8E8E93', marginBottom: 10, marginTop: 5, letterSpacing: 0.5 },
-  itemRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 12, borderRadius: 12, marginBottom: 8, elevation: 2 },
-  itemInfo: { fontWeight: "700", fontSize: 14, color: '#333' },
-  itemDate: { fontSize: 11, color: "#888", marginTop: 2 },
-  itemValues: { flex: 1, alignItems: 'flex-end', marginRight: 10 },
-  mainValue: { fontSize: 14, fontWeight: "800", color: "#333" },
-  actions: { flexDirection: "row", gap: 8 },
-  actionBtn: { padding: 8, backgroundColor: "#F5F5F5", borderRadius: 8 },
-  emptyText: { textAlign: 'center', marginTop: 20, color: "#AAA", fontWeight: '600' }
+  itemRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 15, borderRadius: 12, marginBottom: 8, elevation: 2 },
+  itemInfo: { fontWeight: "700", fontSize: 14 },
+  itemSub: { fontSize: 12, color: "#999", marginTop: 2 }
 });

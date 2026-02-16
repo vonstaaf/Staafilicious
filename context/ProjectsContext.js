@@ -1,4 +1,3 @@
-// ProjectsContext.js
 import React, { createContext, useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db, auth } from "../firebaseConfig";
@@ -17,6 +16,9 @@ import {
   serverTimestamp
 } from "firebase/firestore";
 
+// Import för notis-tjänsten
+import { sendPushNotification } from "../utils/pushService";
+
 export const ProjectsContext = createContext();
 
 export const ProjectsProvider = ({ children }) => {
@@ -25,26 +27,51 @@ export const ProjectsProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // 1. Ladda senast valda projekt från AsyncStorage
+  // HJÄLPFUNKTION: GENERERA ALFANUMERISK KOD
+  const generateProjectCode = () => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let result = "";
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
+
+  // HJÄLPFUNKTION: NOTIFIERA KOLLEGOR
+  const notifyCollaborators = async (projectId, title, body) => {
+    try {
+      const projectRef = doc(db, "groups", projectId);
+      const projectSnap = await getDoc(projectRef);
+      if (!projectSnap.exists()) return;
+      const { members, name } = projectSnap.data();
+
+      for (const memberId of members) {
+        if (memberId !== auth.currentUser?.uid) {
+          const userRef = doc(db, "users", memberId);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists() && userSnap.data().pushToken) {
+            await sendPushNotification(userSnap.data().pushToken, title || name, body);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Notis-fel:", error);
+    }
+  };
+
   useEffect(() => {
     const loadSavedProject = async () => {
       try {
         const saved = await AsyncStorage.getItem("lastSelectedProject");
-        if (saved) {
-          setSelectedProjectState(JSON.parse(saved));
-        }
-      } catch (e) {
-        console.error("Context: AsyncStorage error", e);
-      }
+        if (saved) setSelectedProjectState(JSON.parse(saved));
+      } catch (e) { console.error(e); }
     };
     loadSavedProject();
   }, []);
 
-  // 2. Auth-lyssnare + realtime listener för projekt
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user || null);
-
       if (!user) {
         setProjects([]);
         setSelectedProjectState(null);
@@ -52,182 +79,122 @@ export const ProjectsProvider = ({ children }) => {
         return;
       }
 
-      const q = query(
-        collection(db, "groups"),
-        where("members", "array-contains", user.uid)
-      );
-
-      const unsubscribeSnapshot = onSnapshot(
-        q,
-        (snapshot) => {
-          const projectsData = snapshot.docs.map((d) => ({
-            id: d.id,
-            ...d.data(),
-            kostnader: d.data().kostnader || [],
-            products: d.data().products || []
-          }));
-
-          setProjects(projectsData);
-
-          // Synka det valda projektet om datan i Firestore ändras
-          setSelectedProjectState((prev) => {
-            if (!prev) return null;
-            const updated = projectsData.find((p) => p.id === prev.id);
-            return updated || null;
-          });
-
-          setLoading(false);
-        },
-        (error) => {
-          console.error("Firestore Error:", error);
-          setLoading(false);
-        }
-      );
-
+      const q = query(collection(db, "groups"), where("members", "array-contains", user.uid));
+      const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+        const projectsData = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+          status: d.data().status || "active",
+          kostnader: d.data().kostnader || [],
+          products: d.data().products || []
+        }));
+        const sorted = projectsData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        setProjects(sorted);
+        setSelectedProjectState((prev) => {
+          if (!prev) return null;
+          const updated = projectsData.find((p) => p.id === prev.id);
+          return updated || null;
+        });
+        setLoading(false);
+      });
       return () => unsubscribeSnapshot();
     });
-
     return () => unsubscribeAuth();
   }, []);
 
-  // Hjälpfunktion för att tvätta namnet (Versaler + Trimma mellanslag)
-  const cleanProjectName = (name = "") =>
-    name.toString().toUpperCase().replace(/[^A-ZÅÄÖ0-9\s]/g, "").trim();
+  const cleanProjectName = (name = "") => {
+    if (!name) return "";
+    const trimmed = name.toString().trim();
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  };
 
   const setSelectedProject = async (project) => {
-    try {
-      setSelectedProjectState(project);
-      if (project) {
-        await AsyncStorage.setItem("lastSelectedProject", JSON.stringify(project));
-      } else {
-        await AsyncStorage.removeItem("lastSelectedProject");
-      }
-    } catch (e) {
-      console.error("Context: Error saving project choice", e);
+    setSelectedProjectState(project);
+    if (project) {
+      await AsyncStorage.setItem("lastSelectedProject", JSON.stringify(project));
+    } else {
+      await AsyncStorage.removeItem("lastSelectedProject");
     }
   };
 
+  // UPPDATERAD: Hämtar nu användarens standardmall vid skapande
   const createProject = async (name, code) => {
-    if (!auth.currentUser) throw new Error("Ingen inloggad användare");
+    if (!auth.currentUser) throw new Error("Ingen användare");
     const formattedName = cleanProjectName(name);
-    const formattedCode = (code || "").toString().toUpperCase().trim();
+    const codeToUse = code ? code.toString().toUpperCase().trim() : generateProjectCode();
+    
+    // 1. Försök hämta användarens sparade mall (kategorier/punkter)
+    let templateToUse = [];
+    try {
+      const userRef = doc(db, "users", auth.currentUser.uid);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        if (userData.defaultInspectionTemplate) {
+          templateToUse = userData.defaultInspectionTemplate;
+        }
+      }
+    } catch (err) {
+      console.log("Kunde inte hämta standardmall:", err);
+    }
 
+    // 2. Skapa projektdata med mallen inkluderad
     const newProjectData = {
       name: formattedName,
-      code: formattedCode,
+      code: codeToUse,
       owner: auth.currentUser.uid,
       members: [auth.currentUser.uid],
+      status: "active",
       kostnader: [],
       products: [],
+      inspectionTemplate: templateToUse, // Här läggs din sparade mall in
       createdAt: serverTimestamp()
     };
-
-    try {
-      const docRef = await addDoc(collection(db, "groups"), newProjectData);
-      const created = { id: docRef.id, ...newProjectData };
-      // Lokalt uppdatera state så UI reagerar snabbare (onSnapshot kommer också uppdatera)
-      setProjects((prev) => [created, ...prev]);
-      return created;
-    } catch (e) {
-      console.error("Error creating project:", e);
-      throw e;
-    }
+    
+    const docRef = await addDoc(collection(db, "groups"), newProjectData);
+    return { id: docRef.id, ...newProjectData };
   };
 
   const importProject = async (code) => {
-    if (!auth.currentUser) throw new Error("Ingen inloggad användare");
     const formattedCode = (code || "").toString().toUpperCase().trim();
-
     const q = query(collection(db, "groups"), where("code", "==", formattedCode));
     const querySnapshot = await getDocs(q);
-
     if (!querySnapshot.empty) {
       const docSnap = querySnapshot.docs[0];
       const data = docSnap.data();
       if (!data.members.includes(auth.currentUser.uid)) {
-        await updateDoc(doc(db, "groups", docSnap.id), {
-          members: [...data.members, auth.currentUser.uid]
-        });
+        await updateDoc(doc(db, "groups", docSnap.id), { members: [...data.members, auth.currentUser.uid] });
+        notifyCollaborators(docSnap.id, "Ny medlem!", `${auth.currentUser.email} har gått med i projektet ${data.name}`);
       }
       const project = { id: docSnap.id, ...data };
       await setSelectedProject(project);
-      return project;
     } else {
-      throw new Error("Koden är ogiltig");
+      throw new Error("Ogiltig kod");
     }
   };
 
-  // updateProject: uppdaterar ett projekt i Firestore och i lokal state, returnerar uppdaterat projekt
   const updateProject = async (projectId, updates) => {
-    if (!projectId) throw new Error("Missing projectId");
-    try {
-      const ref = doc(db, "groups", projectId);
+    const finalUpdates = { ...updates };
+    if (updates.name) finalUpdates.name = cleanProjectName(updates.name);
+    if (updates.code) finalUpdates.code = updates.code.toString().toUpperCase().replace(/[^a-zA-Z0-9]/g, "");
 
-      // Hämta aktuell data från Firestore för att slå ihop (om behövs)
-      const snap = await getDoc(ref);
-      const currentData = snap.exists() ? snap.data() : {};
-
-      const merged = { ...currentData, ...updates };
-
-      // Uppdatera i Firestore (bara fälten i updates)
-      await updateDoc(ref, updates);
-
-      // Uppdatera lokal state (projects array)
-      setProjects((prev) => {
-        const idx = prev.findIndex((p) => p.id === projectId);
-        if (idx === -1) {
-          return [...prev, { id: projectId, ...merged }];
-        } else {
-          const copy = [...prev];
-          copy[idx] = { id: projectId, ...merged };
-          return copy;
-        }
-      });
-
-      // Uppdatera selectedProject om det är samma
-      setSelectedProjectState((prev) => {
-        if (prev && prev.id === projectId) {
-          return { id: projectId, ...merged };
-        }
-        return prev;
-      });
-
-      return { id: projectId, ...merged };
-    } catch (e) {
-      console.error("updateProject error:", e);
-      throw e;
-    }
-  };
-
-  const updateProjectData = async (projectId, updateObject) => {
-    // Behåll för bakåtkompatibilitet (samma som updateProject men enklare namn)
-    return updateProject(projectId, updateObject);
-  };
-
-  const renameProject = async (id, newName) => {
-    const formattedName = cleanProjectName(newName);
-    try {
-      await updateDoc(doc(db, "groups", id), { name: formattedName });
-      // Lokalt uppdatera state
-      setProjects((prev) => prev.map(p => p.id === id ? { ...p, name: formattedName } : p));
-      setSelectedProjectState((prev) => prev && prev.id === id ? { ...prev, name: formattedName } : prev);
-    } catch (e) {
-      console.error("Context: Error renaming project", e);
-      throw e;
-    }
+    const ref = doc(db, "groups", projectId);
+    await updateDoc(ref, finalUpdates);
+    notifyCollaborators(projectId, "Projekt uppdaterat", "En kollega har gjort ändringar i projektet.");
   };
 
   const deleteProject = async (id) => {
-    try {
-      await deleteDoc(doc(db, "groups", id));
-      setProjects((prev) => prev.filter(p => p.id !== id));
-      if (selectedProject?.id === id) {
-        await setSelectedProject(null);
-      }
-    } catch (e) {
-      console.error("Context: Error deleting project", e);
-      throw e;
-    }
+    await deleteDoc(doc(db, "groups", id));
+    if (selectedProject?.id === id) await setSelectedProject(null);
+  };
+
+  const archiveProject = async (projectId) => {
+    await updateDoc(doc(db, "groups", projectId), { status: "archived", archivedAt: new Date().toISOString() });
+    if (selectedProject?.id === projectId) await setSelectedProject(null);
+  };
+
+  const restoreProject = async (projectId) => {
+    await updateDoc(doc(db, "groups", projectId), { status: "active", archivedAt: null });
   };
 
   return (
@@ -237,12 +204,12 @@ export const ProjectsProvider = ({ children }) => {
         selectedProject,
         setSelectedProject,
         createProject,
+        addProject: createProject,
         importProject,
-        renameProject,
-        deleteProject,
         updateProject,
-        updateProjectData,
-        currentUser,
+        deleteProject,
+        archiveProject,
+        restoreProject,
         loading
       }}
     >

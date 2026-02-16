@@ -15,7 +15,7 @@ export function BadgeProvider({ children }) {
   useEffect(() => {
     const loadLogo = async () => {
       try {
-        const savedLogo = await AsyncStorage.getItem("user_logo");
+        const savedLogo = await AsyncStorage.getItem("@company_logo");
         if (savedLogo) {
           setCurrentLogo(savedLogo);
         }
@@ -26,12 +26,12 @@ export function BadgeProvider({ children }) {
     loadLogo();
   }, []);
 
-  // 2. SPARAR loggan automatiskt när currentLogo ändras
+  // 2. SPARAR loggan automatiskt i telefonen när den ändras i appen
   useEffect(() => {
     const saveLogo = async () => {
       try {
         if (currentLogo) {
-          await AsyncStorage.setItem("user_logo", currentLogo);
+          await AsyncStorage.setItem("@company_logo", currentLogo);
         }
       } catch (e) {
         console.error("BadgeContext: Fel vid sparande av logotyp", e);
@@ -40,18 +40,15 @@ export function BadgeProvider({ children }) {
     saveLogo();
   }, [currentLogo]);
 
-  // 3. Uppdaterar räknare automatiskt när ett projekt väljs eller ändras i Firebase
+  // 3. Uppdaterar räknare automatiskt
   useEffect(() => {
     if (selectedProject) {
-      // Räkna rader i kostnader (arbetslogg)
       const kCount = selectedProject.kostnader?.length || 0;
       setKostnaderCount(kCount);
 
-      // Räkna artiklar/produkter
       const pCount = selectedProject.products?.length || 0;
       setProductsCount(pCount);
     } else {
-      // Om inget projekt är valt, nollställ räknarna
       setKostnaderCount(0);
       setProductsCount(0);
     }
@@ -60,17 +57,12 @@ export function BadgeProvider({ children }) {
   return (
     <BadgeContext.Provider 
       value={{ 
-        // Räknare
         KostnaderCount, 
         productsCount, 
         notificationsCount,
-        
-        // Funktioner för att ändra/nollställa
         setKostnaderCount, 
         setProductsCount,  
         setNotificationsCount,
-
-        // Global logotyp-hantering
         currentLogo,       
         setCurrentLogo     
       }}

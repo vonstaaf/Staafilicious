@@ -11,6 +11,9 @@ import { signOut } from "firebase/auth";
 import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 
+// Importera fil-hanteraren (Utility)
+import { importProjectFromJson } from "../utils/exportUtils";
+
 export default function HomeScreen() {
   const navigation = useNavigation();
   const {
@@ -18,9 +21,11 @@ export default function HomeScreen() {
     selectedProject,
     setSelectedProject,
     createProject,
-    importProject,
+    importProject,        // Gå med via KOD
+    importProjectFromFile, // FIX: Används för att spara JSON-data till Firebase
     renameProject,
     deleteProject,
+    archiveProject,
   } = useContext(ProjectsContext);
 
   const [projectName, setProjectName] = useState("");
@@ -30,9 +35,13 @@ export default function HomeScreen() {
   const [activeProject, setActiveProject] = useState(null);
   const [editName, setEditName] = useState("");
 
-  // HJÄLPFUNKTION: Tvingar fram versaler, siffror och mellanslag direkt vid inmatning
-  const formatProjectInput = (text) => {
-    return text.toUpperCase().replace(/[^A-ZÅÄÖ0-9\s]/g, "");
+  // Filtrera bort arkiverade projekt
+  const activeProjects = projects.filter(p => p.status !== 'archived' && !p.isArchived);
+
+  const formatProjectName = (text) => {
+    if (!text) return "";
+    const trimmed = text.trim();
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
   };
 
   const handleSelectProject = () => {
@@ -41,28 +50,29 @@ export default function HomeScreen() {
   };
 
   const handleRename = async () => {
-    const cleanedName = editName.trim();
+    const cleanedName = formatProjectName(editName);
     if (cleanedName.length < 2) {
       return Alert.alert("Fel", "Namnet måste vara minst 2 tecken.");
     }
+
     try {
-      await renameProject(activeProject.id, cleanedName);
+      await renameProject(activeProject.id, { name: cleanedName });
       setRenameVisible(false);
       setMenuVisible(false);
       setEditName("");
       Keyboard.dismiss();
     } catch (error) {
-      Alert.alert("Fel", "Kunde inte byta namn.");
+      console.error("Rename error:", error);
+      Alert.alert("Fel", "Kunde inte spara namnet.");
     }
   };
 
   const handleCreateProject = async () => {
-    const cleanedName = projectName.trim();
+    const cleanedName = formatProjectName(projectName);
     if (cleanedName.length < 2) {
       return Alert.alert("Fel", "Ange ett projektnamn (minst 2 tecken).");
     }
     try {
-      // Skapa en unik kod (8 tecken)
       const code = Math.random().toString(36).substring(2, 10).toUpperCase();
       await createProject(cleanedName, code);
       setProjectName("");
@@ -72,8 +82,9 @@ export default function HomeScreen() {
     }
   };
 
-  const handleImportProject = async () => {
-    const cleanedCode = projectCode.trim();
+  // Gå med via KOD (Cloud)
+  const handleImportProjectByCode = async () => {
+    const cleanedCode = projectCode.trim().toUpperCase();
     if (!cleanedCode) return Alert.alert("Fel", "Ange en projektkod.");
     try {
       await importProject(cleanedCode);
@@ -82,6 +93,46 @@ export default function HomeScreen() {
     } catch (error) { 
       Alert.alert("Fel", "Projektkoden hittades inte."); 
     }
+  };
+
+  // NY FUNKTION: Importera via FIL (.json)
+  const handleImportProjectFromFile = async () => {
+    try {
+      // 1. Välj fil och hämta data (Utility)
+      const projectData = await importProjectFromJson();
+      
+      if (projectData) {
+        // 2. Spara till Firebase (Context)
+        // Vi använder Context-funktionen eftersom den hanterar hela objektet (produkter etc.)
+        await importProjectFromFile(projectData);
+        Alert.alert("Klart", `Projektet "${projectData.name}" har importerats!`);
+      }
+    } catch (error) {
+      console.log("Import cancelled or failed", error);
+      // Inget felmeddelande behövs om användaren bara avbröt
+    }
+  };
+
+  const handleArchiveProject = () => {
+    Alert.alert(
+      "Arkivera Projekt",
+      "Är du säker? Projektet flyttas till arkivet men kan återställas senare.",
+      [
+        { text: "Avbryt", style: "cancel" },
+        { 
+          text: "Arkivera", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              await archiveProject(activeProject.id);
+              setMenuVisible(false);
+            } catch (e) {
+              Alert.alert("Fel", "Kunde inte arkivera projektet.");
+            }
+          } 
+        }
+      ]
+    );
   };
 
   const renderProjectItem = ({ item }) => {
@@ -117,15 +168,34 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      {/* HEADER SECTION */}
       <View style={styles.headerSection}>
         <View style={styles.infoBox}>
           <View style={{ flex: 1 }}>
             <Text style={styles.infoLabel}>AKTIVT PROJEKT</Text>
-            <Text style={styles.infoTitle}>
+            <Text style={styles.infoTitle} numberOfLines={1}>
               {selectedProject ? selectedProject.name : "VÄLJ ETT PROJEKT"}
             </Text>
           </View>
-          <TouchableOpacity onPress={() => signOut(auth)} style={styles.logoutBtn}>
+
+          {/* Knapp för FIL-import */}
+          <TouchableOpacity 
+            onPress={handleImportProjectFromFile} 
+            style={[styles.headerActionBtn, { backgroundColor: "#E3F2FD" }]}
+          >
+            <Ionicons name="document-attach-outline" size={22} color="#1976D2" />
+          </TouchableOpacity>
+
+          {/* Arkiv-knapp */}
+          <TouchableOpacity 
+            onPress={() => navigation.navigate("Archive")} 
+            style={[styles.headerActionBtn, { backgroundColor: "#F0F0F7" }]}
+          >
+            <Ionicons name="archive-outline" size={22} color={WorkaholicTheme.colors.primary} />
+          </TouchableOpacity>
+
+          {/* Logga ut */}
+          <TouchableOpacity onPress={() => signOut(auth)} style={[styles.headerActionBtn, { backgroundColor: "#FFF5F5" }]}>
             <Ionicons name="log-out-outline" size={22} color={WorkaholicTheme.colors.error} />
           </TouchableOpacity>
         </View>
@@ -135,10 +205,9 @@ export default function HomeScreen() {
             <TextInput 
               placeholder="NYTT PROJEKTNAMN..." 
               value={projectName} 
-              onChangeText={(t) => setProjectName(formatProjectInput(t))} 
+              onChangeText={setProjectName} 
               style={styles.input} 
               placeholderTextColor="#999"
-              autoCapitalize="characters"
               autoCorrect={false}
             />
             <TouchableOpacity style={styles.addBtn} onPress={handleCreateProject}>
@@ -150,13 +219,13 @@ export default function HomeScreen() {
             <TextInput 
               placeholder="ANGE PROJEKTKOD..." 
               value={projectCode} 
-              onChangeText={(t) => setProjectCode(formatProjectInput(t))} 
+              onChangeText={setProjectCode} 
               style={styles.input} 
               autoCapitalize="characters"
               autoCorrect={false}
               placeholderTextColor="#999"
             />
-            <TouchableOpacity style={[styles.addBtn, { backgroundColor: '#555' }]} onPress={handleImportProject}>
+            <TouchableOpacity style={[styles.addBtn, { backgroundColor: '#555' }]} onPress={handleImportProjectByCode}>
               <Ionicons name="enter-outline" size={24} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -166,18 +235,19 @@ export default function HomeScreen() {
       <Text style={styles.sectionTitle}>MINA PROJEKT</Text>
       
       <FlatList
-        data={projects}
+        data={activeProjects}
         keyExtractor={(item) => item.id}
         renderItem={renderProjectItem}
         contentContainerStyle={styles.listPadding}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name="folder-open-outline" size={60} color="#CCC" />
-            <Text style={styles.emptyText}>Inga projekt hittades.</Text>
+            <Text style={styles.emptyText}>Inga aktiva projekt hittades.</Text>
           </View>
         }
       />
 
+      {/* PROJEKT MENY MODAL */}
       <Modal visible={menuVisible} transparent animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -189,23 +259,26 @@ export default function HomeScreen() {
             <Button title="VÄLJ SOM AKTIVT PROJEKT" type="primary" onPress={handleSelectProject} />
             <View style={{ height: 10 }} />
             <Button title="DELA PROJEKTKOD" type="secondary" onPress={() => { 
-              Share.share({ message: `Gå med i mitt projekt i Workaholic! Kod: ${activeProject.code}` }); 
+              Share.share({ message: `Gå med i mitt projekt i Workaholic! Kod: ${activeProject?.code}` }); 
               setMenuVisible(false); 
             }} />
             <View style={{ height: 10 }} />
             <Button title="BYT NAMN" type="secondary" onPress={() => setRenameVisible(true)} />
             
             <View style={{ height: 10 }} />
+            <Button title="ARKIVERA PROJEKT" type="secondary" onPress={handleArchiveProject} />
+
+            <View style={{ height: 10 }} />
             <TouchableOpacity 
               style={styles.deleteAction}
               onPress={() => {
-                Alert.alert("Radera?", "Projektet försvinner för alla medlemmar.", [
+                Alert.alert("Radera?", "Projektet försvinner permanent för alla medlemmar.", [
                   { text: "Avbryt" },
                   { text: "Radera", style: "destructive", onPress: () => { deleteProject(activeProject.id); setMenuVisible(false); } }
                 ]);
               }}
             >
-              <Text style={styles.deleteActionText}>RADERA PROJEKT</Text>
+              <Text style={styles.deleteActionText}>RADERA PROJEKT PERMANENT</Text>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setMenuVisible(false)} style={styles.closeBtn}>
@@ -215,25 +288,24 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
+      {/* RENAME MODAL */}
       <Modal visible={renameVisible} transparent animationType="fade">
         <View style={styles.centerModalContainer}>
           <View style={styles.centerModalContent}>
             <Text style={styles.modalTitle}>BYT NAMN PÅ PROJEKT</Text>
-            
             <View style={styles.editInputWrapper}>
               <TextInput 
                 style={styles.editInput}
                 value={editName}
-                onChangeText={(t) => setEditName(formatProjectInput(t))}
+                onChangeText={setEditName}
                 placeholder="NYTT NAMN..."
                 placeholderTextColor="#999"
                 autoFocus
-                autoCapitalize="characters"
                 autoCorrect={false}
+                autoCapitalize="sentences"
                 selectionColor={WorkaholicTheme.colors.primary}
               />
             </View>
-
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
               <TouchableOpacity style={[styles.flexBtn, { backgroundColor: '#EEE' }]} onPress={() => setRenameVisible(false)}>
                 <Text style={{ color: '#333', fontWeight: 'bold' }}>AVBRYT</Text>
@@ -251,40 +323,40 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: WorkaholicTheme.colors.background },
-  headerSection: { padding: 20, backgroundColor: "#FFF", borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 3 },
+  headerSection: { padding: 20, backgroundColor: "#FFF", borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
   infoBox: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   infoLabel: { fontSize: 10, fontWeight: "800", color: "#999", letterSpacing: 1 },
   infoTitle: { fontSize: 20, fontWeight: "bold", color: WorkaholicTheme.colors.primary },
-  logoutBtn: { padding: 8, backgroundColor: "#FFF5F5", borderRadius: 10 },
+  headerActionBtn: { padding: 10, borderRadius: 12, marginLeft: 8 },
   inputArea: { gap: 10 },
   inputRow: { flexDirection: 'row', gap: 10 },
-  input: { flex: 1, backgroundColor: "#F5F5F7", padding: 12, borderRadius: 12, borderWidth: 1, borderColor: "#EEE", color: "#333", fontWeight: 'bold' },
-  addBtn: { backgroundColor: WorkaholicTheme.colors.primary, width: 50, borderRadius: 12, justifyContent: "center", alignItems: "center" },
-  sectionTitle: { fontSize: 18, fontWeight: "800", marginHorizontal: 20, marginTop: 25, marginBottom: 15 },
+  input: { flex: 1, backgroundColor: "#F5F5F7", padding: 14, borderRadius: 14, borderWidth: 1, borderColor: "#EEE", color: "#333", fontWeight: 'bold' },
+  addBtn: { backgroundColor: WorkaholicTheme.colors.primary, width: 55, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  sectionTitle: { fontSize: 18, fontWeight: "900", marginHorizontal: 20, marginTop: 25, marginBottom: 15, color: '#333' },
   listPadding: { paddingHorizontal: 20, paddingBottom: 40 },
-  projectCard: { flexDirection: "row", backgroundColor: "#FFF", borderRadius: 16, padding: 15, marginBottom: 12, alignItems: "center", justifyContent: "space-between", elevation: 1 },
+  projectCard: { flexDirection: "row", backgroundColor: "#FFF", borderRadius: 18, padding: 16, marginBottom: 12, alignItems: "center", justifyContent: "space-between", elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
   selectedCard: { backgroundColor: WorkaholicTheme.colors.primary },
   projectInfo: { flexDirection: "row", alignItems: "center" },
-  iconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#F0F0F7", justifyContent: "center", alignItems: "center", marginRight: 12 },
+  iconCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#F0F0F7", justifyContent: "center", alignItems: "center", marginRight: 15 },
   selectedIconCircle: { backgroundColor: "rgba(255,255,255,0.2)" },
-  projectName: { fontSize: 16, fontWeight: "bold", color: "#333" },
-  projectSub: { fontSize: 12, color: "#888" },
+  projectName: { fontSize: 16, fontWeight: "bold", color: "#1C1C1E" },
+  projectSub: { fontSize: 12, color: "#8E8E93", marginTop: 2 },
   selectedText: { color: "#FFF" },
   selectedTextSub: { color: "rgba(255,255,255,0.7)" },
   modalContainer: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.5)" },
-  modalContent: { backgroundColor: "#fff", padding: 25, borderTopLeftRadius: 30, borderTopRightRadius: 30 },
+  modalContent: { backgroundColor: "#fff", padding: 25, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingBottom: 40 },
   centerModalContainer: { flex: 1, justifyContent: "center", alignItems: 'center', backgroundColor: "rgba(0,0,0,0.6)", padding: 20 },
-  centerModalContent: { backgroundColor: "#fff", padding: 20, borderRadius: 24, width: '100%', elevation: 5 },
-  modalHeader: { marginBottom: 20, alignItems: 'center' },
-  modalTitle: { fontSize: 20, fontWeight: "bold", color: WorkaholicTheme.colors.primary, marginBottom: 15 },
-  modalSubTitle: { fontSize: 14, color: "#666" },
-  editInputWrapper: { backgroundColor: "#F5F5F7", borderRadius: 12, borderWidth: 1, borderColor: "#DDD", paddingHorizontal: 15, height: 50, justifyContent: 'center' },
-  editInput: { fontSize: 16, color: "#333", fontWeight: 'bold' },
-  flexBtn: { flex: 1, padding: 15, borderRadius: 12, alignItems: 'center' },
-  deleteAction: { padding: 15, alignItems: 'center' },
-  deleteActionText: { color: WorkaholicTheme.colors.error, fontWeight: "bold" },
-  closeBtn: { marginTop: 10, padding: 15 },
-  closeBtnText: { textAlign: "center", color: "#999", fontWeight: "700" },
-  emptyState: { alignItems: "center", marginTop: 40 },
-  emptyText: { color: "#AAA", marginTop: 10 }
+  centerModalContent: { backgroundColor: "#fff", padding: 25, borderRadius: 28, width: '100%', elevation: 10 },
+  modalHeader: { marginBottom: 25, alignItems: 'center' },
+  modalTitle: { fontSize: 22, fontWeight: "900", color: WorkaholicTheme.colors.primary, marginBottom: 5 },
+  modalSubTitle: { fontSize: 14, color: "#8E8E93", fontWeight: '600' },
+  editInputWrapper: { backgroundColor: "#F5F5F7", borderRadius: 15, borderWidth: 1, borderColor: "#DDD", paddingHorizontal: 15, height: 55, justifyContent: 'center' },
+  editInput: { fontSize: 18, color: "#333", fontWeight: 'bold' },
+  flexBtn: { flex: 1, padding: 18, borderRadius: 15, alignItems: 'center' },
+  deleteAction: { padding: 15, alignItems: 'center', marginTop: 10 },
+  deleteActionText: { color: WorkaholicTheme.colors.error, fontWeight: "800", fontSize: 13 },
+  closeBtn: { marginTop: 15, padding: 10 },
+  closeBtnText: { textAlign: "center", color: "#BBB", fontWeight: "800", fontSize: 14 },
+  emptyState: { alignItems: "center", marginTop: 60 },
+  emptyText: { color: "#CCC", marginTop: 15, fontWeight: '700' }
 });

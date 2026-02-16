@@ -2,40 +2,43 @@
   "expo": {
     "name": "Workaholic",
     "slug": "staafilicious-frontend",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#121212"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.vonstaaf.staafiliciousfrontend",
+      "bundleIdentifier": "com.staafilicious.workaholic",
+      "buildNumber": "18",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Appen behöver tillgång till dina bilder för att du ska kunna ladda upp din företagslogotyp till dina Projekt.",
+        "NSPhotoLibraryUsageDescription": "Appen behöver tillgång till dina bilder för att du ska kunna ladda upp din företagslogotyp och dokumentera dina Projekt.",
         "NSCameraUsageDescription": "Appen behöver tillgång till kameran för att du ska kunna ta foton direkt till dina Projekt.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.vonstaaf.staafiliciousfrontend",
-      "versionCode": 2,
+      "versionCode": 15,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#121212"
       },
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.FOREGROUND_SERVICE"
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/logo.png"
     },
     "plugins": [
       "expo-asset",
@@ -43,7 +46,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Tillåt Workaholic att använda dina bilder för att välja en logotyp till dina Projekt.",
+          "photosPermission": "Tillåt Workaholic att använda dina bilder för att välja en logotyp och dokumentera dina Projekt.",
           "cameraPermission": "Tillåt Workaholic att använda kameran för att ta bilder till dina Projekt."
         }
       ]
