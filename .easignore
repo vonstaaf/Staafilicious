@@ -1,0 +1,29 @@
+# System & Build
+node_modules/
+.expo/
+.git/
+android/
+ios/
+bin/
+build/
+
+# Backup & Skräp (Dina tunga mappar)
+AVVAKTA BORTTAGNING/
+Dokument/
+extras/
+Staafilicious/
+scripts/
+functions/
+
+# Filer som tar plats
+*.aab
+*.apk
+*.zip
+*.rar
+*.xlsx
+*.log
+
+# Specifika Firebase/Admin filer (Säkerhet)
+*.json.json
+serviceAccountKey.json
+produkter.json
