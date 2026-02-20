@@ -2,7 +2,7 @@
   "expo": {
     "name": "Workaholic",
     "slug": "staafilicious-frontend",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.staafilicious.workaholic",
-      "buildNumber": "18",
+      "buildNumber": "21",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Appen behöver tillgång till dina bilder för att du ska kunna ladda upp din företagslogotyp och dokumentera dina Projekt.",
         "NSCameraUsageDescription": "Appen behöver tillgång till kameran för att du ska kunna ta foton direkt till dina Projekt.",
@@ -24,7 +24,7 @@
     },
     "android": {
       "package": "com.vonstaaf.staafiliciousfrontend",
-      "versionCode": 15,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#121212"
@@ -48,6 +48,14 @@
         {
           "photosPermission": "Tillåt Workaholic att använda dina bilder för att välja en logotyp och dokumentera dina Projekt.",
           "cameraPermission": "Tillåt Workaholic att använda kameran för att ta bilder till dina Projekt."
+        }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "react-native",
+          "organization": "workaholic"
         }
       ]
     ],

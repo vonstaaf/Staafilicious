@@ -31,7 +31,7 @@ const APP_LOGO = require("../assets/logo.png");
 const DEFAULT_ITEMS = [];
 
 export default function InspectionScreen({ route, navigation }) {
-  const { selectedProject, updateProject } = useContext(ProjectsContext);
+  const { selectedProject, updateProject, saveInspectionTemplate } = useContext(ProjectsContext);
   const signatureRef = useRef();
   const isSavingRef = useRef(false);
   const insets = useSafeAreaInsets();
@@ -89,9 +89,6 @@ export default function InspectionScreen({ route, navigation }) {
     if (!selectedProject?.id || isSavingRef.current || editingHistoryId || isProcessing) return;
     isSavingRef.current = true;
     try {
-      const user = auth.currentUser;
-
-      // 1. Spara till det specifika projektet (som vanligt)
       await updateProject(selectedProject.id, {
         currentInspections: updatedFields.inspections ?? checks,
         currentInspectionRowComments: updatedFields.inspectionRowComments ?? rowComments,
@@ -101,23 +98,33 @@ export default function InspectionScreen({ route, navigation }) {
         currentImages: updatedFields.images ?? images,
         ...updatedFields,
       });
-
-      // 2. NYTT: Spara mallen globalt på användaren för framtida projekt
-      // Vi sparar bara om det faktiskt finns punkter i mallen
-      const templateToSave = updatedFields.inspectionTemplate ?? items;
-      if (user && templateToSave && templateToSave.length > 0) {
-        const userRef = doc(db, "users", user.uid);
-        await updateDoc(userRef, {
-          defaultInspectionTemplate: templateToSave
-        });
-        console.log("Global mall uppdaterad!");
-      }
-
     } catch (err) {
       console.log("Autosave error:", err);
     } finally { 
       isSavingRef.current = false; 
     }
+  };
+
+  // --- NY FUNKTION: Manuellt spara som mall ---
+  const handleSaveAsTemplate = () => {
+    Alert.alert(
+      "Spara som mall",
+      "Vill du spara nuvarande kategorier och punkter som standardmall för alla framtida projekt?",
+      [
+        { text: "Avbryt", style: "cancel" },
+        { 
+          text: "Ja, spara", 
+          onPress: async () => {
+            try {
+              await saveInspectionTemplate(items);
+              Alert.alert("Sparat", "Mallen har uppdaterats och kommer användas på nya projekt.");
+            } catch (error) {
+              Alert.alert("Fel", "Kunde inte spara mallen.");
+            }
+          } 
+        }
+      ]
+    );
   };
 
   const pickImage = async () => {
@@ -134,11 +141,9 @@ export default function InspectionScreen({ route, navigation }) {
     }
   };
 
-  // UPPDATERAD: Skickar nu argument i rätt ordning (project, inspection, companyData)
   const onGeneratePdf = async (historyData) => {
     setIsProcessing(true);
     try {
-      // historyData innehåller den specifika inspektionen (checks, images, etc.)
       await handleInspectionPdf(selectedProject, historyData, companyData);
     } catch (e) {
       console.error(e);
@@ -284,9 +289,16 @@ export default function InspectionScreen({ route, navigation }) {
 
             {editMode && (
               <View style={styles.adminBanner}>
+                {/* Knapp för att lägga till kategori */}
                 <TouchableOpacity style={styles.addSectionBtn} onPress={addNewSection}>
                   <Ionicons name="add-circle" size={20} color="#FFF" />
                   <Text style={styles.addSectionText}>NY KATEGORI</Text>
+                </TouchableOpacity>
+
+                {/* 🔑 NY KNAPP: Spara som mall */}
+                <TouchableOpacity style={[styles.addSectionBtn, {backgroundColor: '#4A90E2', marginTop: 10}]} onPress={handleSaveAsTemplate}>
+                  <Ionicons name="save-outline" size={20} color="#FFF" />
+                  <Text style={styles.addSectionText}>SPARA SOM STANDARDMALL</Text>
                 </TouchableOpacity>
               </View>
             )}
