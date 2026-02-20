@@ -1,254 +1,182 @@
-import React, { useContext, useState, useEffect } from "react";
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Switch, Image, ScrollView, Modal, ActivityIndicator, Share } from "react-native";
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ProjectsContext } from "../context/ProjectsContext";
-import { useBadges } from "../context/BadgeContext"; 
-import { WorkaholicTheme } from "../theme";
+import React, { useContext, useMemo } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  StatusBar,
+  Alert
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { auth, db } from "../firebaseConfig";
-import { doc, onSnapshot } from "firebase/firestore";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ProjectsContext } from "../context/ProjectsContext";
+import { WorkaholicTheme } from "../theme";
+import AppHeader from "../components/AppHeader";
 
-// 🔑 IMPORT
-import { handleCustomerPdf, handleMaterialPdf } from "../utils/pdfActions";
-
-const workaholicLogoAsset = require("../assets/logo.png");
+// Hjälpfunktion för att formatera valuta
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('sv-SE', {
+    style: 'currency',
+    currency: 'SEK',
+    maximumFractionDigits: 0,
+  }).format(amount || 0);
+};
 
 export default function SettlementScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
-  const { selectedProject, projects, archiveProject } = useContext(ProjectsContext);
-  const { currentLogo } = useBadges();
-  const [showVat, setShowVat] = useState(true); 
-  const [useRot, setUseRot] = useState(false);
-  const [useRut, setUseRut] = useState(false); 
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false); 
-  const [companyData, setCompanyData] = useState(null);
-  const user = auth.currentUser;
+  const { selectedProject } = useContext(ProjectsContext);
+  const project = route.params?.project || selectedProject;
 
-  // Bestäm vilket projekt som ska visas (valt eller från route)
-  const displayProject = route.params?.projectId 
-    ? projects.find(p => (p.id === route.params.projectId || p.code === route.params.projectId)) 
-    : selectedProject;
+  // --- EKONOMISKA BERÄKNINGAR ---
+  const totals = useMemo(() => {
+    if (!project) return { materialIn: 0, materialOut: 0, costs: 0, totalOut: 0, profit: 0, margin: 0 };
 
-  const formatProjectTitle = (name) => { if (!name) return ""; const t = name.trim(); return t.charAt(0).toUpperCase() + t.slice(1); };
-  const formatNumber = (n) => Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  
-  const shareProjectCode = async () => {
-    if (!displayProject?.code) return;
-    try { await Share.share({ message: `Här är projektkoden för ${displayProject.name}: ${displayProject.code}`, }); } catch (error) { Alert.alert("Fel", "Kunde inte dela koden."); }
-  };
+    // 1. Material (Inköp vs Utpris)
+    const matIn = project.products?.reduce((acc, p) => acc + (Number(p.purchasePrice || 0) * Number(p.quantity || 0)), 0) || 0;
+    const matOut = project.products?.reduce((acc, p) => acc + (Number(p.unitPriceOutExclVat || 0) * Number(p.quantity || 0)), 0) || 0;
 
-  useEffect(() => {
-    if (!user) return;
-    const unsub = onSnapshot(doc(db, "users", user.uid), (snap) => {
-       if(snap.exists()) setCompanyData(snap.data());
-    });
-    return () => unsub();
-  }, [user]);
+    // 2. Övriga kostnader (Arbete, Mil, Utlägg från KostnaderScreen)
+    const costTotal = project.kostnader?.reduce((acc, c) => acc + (Number(c.total || 0)), 0) || 0;
 
-  // --- PUNKT 8: SKYDD OM INGET PROJEKT ÄR VALT ---
-  if (!displayProject) {
-    return (
-      <View style={[styles.centeredContainer, { paddingTop: insets.top }]}>
-        <Ionicons name="document-lock-outline" size={80} color="#CCC" />
-        <Text style={styles.noProjectText}>INGET PROJEKT VALT</Text>
-        <Text style={styles.noProjectSub}>
-          Välj ett projekt i listan för att skapa underlag och se ekonomisk sammanställning.
-        </Text>
-        <TouchableOpacity 
-          style={styles.goBackBtn} 
-          onPress={() => navigation.navigate("Home")}
-        >
-          <Text style={styles.goBackBtnText}>GÅ TILL PROJEKTLISTAN</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+    const totalOut = matOut + costTotal;
+    const profit = totalOut - matIn; // Enkel vinstberäkning (Fakturerat - Inköp Material)
+    const margin = totalOut > 0 ? (profit / totalOut) * 100 : 0;
 
-  // --- BERÄKNINGAR (PUNKT 1 & 9) ---
-  const kostnader = displayProject?.kostnader || [];
-  const produkter = displayProject?.products || [];
+    return {
+      materialIn: matIn,
+      materialOut: matOut,
+      costs: costTotal,
+      totalOut: totalOut,
+      profit: profit,
+      margin: margin
+    };
+  }, [project]);
 
-  // Summera arbete/logg (Använder det nya total-fältet från KostnaderScreen)
-  const arbeteExclVat = kostnader.reduce((acc, it) => acc + (Number(it.total) || 0), 0);
-  
-  // Summera material (unitPriceOutExclVat inkluderar påslaget)
-  const materialUtExclVat = produkter.reduce((acc, it) => acc + (Number(it.unitPriceOutExclVat || 0) * Number(it.quantity || 0)), 0);
-  
-  const totalExclVat = arbeteExclVat + materialUtExclVat;
-  const momsBelopp = totalExclVat * 0.25;
-  const aktuellBasSumma = showVat ? (totalExclVat + momsBelopp) : totalExclVat;
-
-  // ROT/RUT baseras på arbetskostnaden
-  const skatteunderlagMoms = arbeteExclVat * 1.25; 
-  const rotAvdrag = useRot ? skatteunderlagMoms * 0.30 : 0;
-  const rutAvdrag = useRut ? skatteunderlagMoms * 0.50 : 0;
-  const totaltSkatteavdrag = rotAvdrag + rutAvdrag;
-  const slutSumma = aktuellBasSumma - totaltSkatteavdrag;
-
-  const handleArchiveProject = () => {
-    if (!displayProject) return;
-    Alert.alert("Arkivera", "Säker?", [{ text: "Avbryt" }, { text: "Arkivera", style: "destructive", onPress: async () => { try { await archiveProject(displayProject.id); navigation.navigate("MainTabs", { screen: "Home" }); } catch (e) { Alert.alert("Fel"); } } }]);
-  };
-
-  // 🔑 PDF-GENERERING (PUNKT 2 & 3)
-  const onGeneratePdf = async (type) => {
-    if (isGenerating || !displayProject) return;
-    setIsGenerating(true);
-    try {
-      if (type === "master") {
-        // Materialspecifikation visar inköpspriser (Punkt 3)
-        await handleMaterialPdf(displayProject, produkter, companyData, workaholicLogoAsset);
-      } else {
-        // Kundunderlag sammanställer allt (Punkt 2)
-        await handleCustomerPdf(displayProject, companyData, { showVat, useRot, useRut });
-      }
-    } catch (e) { 
-      Alert.alert("Fel", "Kunde inte skapa PDF."); 
-    } finally { setIsGenerating(false); }
-  };
+  if (!project) return null;
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: insets.top - 50, paddingBottom: insets.bottom + 20 }}>
-        {displayProject.code && (
-          <TouchableOpacity style={styles.shareCodeBtn} onPress={shareProjectCode}>
-            <Text style={styles.shareCodeText}>PROJEKTKOD: {displayProject.code}</Text>
-            <Ionicons name="share-outline" size={20} color="#FFF" />
-          </TouchableOpacity>
-        )}
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+      
+      <AppHeader 
+        title="PROJEKTSUMMERING" 
+        subTitle={project.name.toUpperCase()} 
+        navigation={navigation} 
+      />
 
-        <TouchableOpacity style={styles.mainCard} onPress={() => setIsModalVisible(true)} activeOpacity={0.9}>
-          {companyData?.logoUrl || currentLogo ? (
-            <Image source={{ uri: companyData?.logoUrl || currentLogo }} style={styles.brandLogo} />
-          ) : ( <Ionicons name="business" size={40} color="#fff" /> )}
-          <Text style={styles.groupName}>PROJEKT: {formatProjectTitle(displayProject.name)}</Text>
-          <Text style={styles.totalAmount}>{formatNumber(slutSumma)} kr</Text>
-          <Text style={styles.tapInfo}>{showVat ? "Inklusive moms" : "Exklusive moms"}</Text>
-        </TouchableOpacity>
-
-        <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>AVSÄNDARE PÅ PDF</Text>
-            <Text style={styles.infoText}>{companyData?.companyName || "Företagsnamn saknas"}</Text>
-        </View>
-
-        <View style={styles.settingsSection}>
-          <View style={styles.settingCard}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.settingTitle}>Visa moms (25%)</Text>
-              <Switch value={showVat} onValueChange={setShowVat} trackColor={{ true: WorkaholicTheme.colors.primary }} />
+      <ScrollView 
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* HUVUDKORT - VINST & MARGINAL */}
+        <View style={styles.mainCard}>
+          <View style={styles.mainRow}>
+            <View>
+              <Text style={styles.mainLabel}>BERÄKNAD VINST</Text>
+              <Text style={styles.mainValue}>{formatCurrency(totals.profit)}</Text>
+            </View>
+            <View style={styles.marginBadge}>
+              <Text style={styles.marginText}>{totals.margin.toFixed(1)}%</Text>
+              <Text style={styles.marginLabelSmall}>MARGINAL</Text>
             </View>
           </View>
-          <View style={styles.settingCard}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.settingTitle}>ROT-avdrag (30%)</Text>
-              <Switch value={useRot} onValueChange={(val) => { setUseRot(val); if(val) setUseRut(false); }} trackColor={{ true: WorkaholicTheme.colors.primary }} />
-            </View>
+          <View style={styles.dividerLight} />
+          <Text style={styles.mainSubText}>Baserat på inköpspriser och fakturerbart underlag.</Text>
+        </View>
+
+        <Text style={styles.sectionTitle}>EKONOMISK SPECIFIKATION</Text>
+
+        {/* MATERIAL-KORT */}
+        <View style={styles.detailCard}>
+          <View style={styles.detailHeader}>
+            <Ionicons name="cart-outline" size={20} color={WorkaholicTheme.colors.primary} />
+            <Text style={styles.detailTitle}>MATERIAL & ARTIKLAR</Text>
           </View>
-          <View style={styles.settingCard}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.settingTitle}>RUT-avdrag (50%)</Text>
-              <Switch value={useRut} onValueChange={(val) => { setUseRut(val); if(val) setUseRot(false); }} trackColor={{ true: WorkaholicTheme.colors.primary }} />
-            </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Faktureras kund:</Text>
+            <Text style={styles.value}>{formatCurrency(totals.materialOut)}</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Inköpskostnad:</Text>
+            <Text style={[styles.value, { color: '#E53935' }]}>- {formatCurrency(totals.materialIn)}</Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.row}>
+            <Text style={styles.labelBold}>Materialvinst:</Text>
+            <Text style={styles.valueBold}>{formatCurrency(totals.materialOut - totals.materialIn)}</Text>
           </View>
         </View>
 
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.pdfBtn} onPress={() => onGeneratePdf("customer")} disabled={isGenerating}>
-            {isGenerating ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>DELA KUND-PDF</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.masterBtn} onPress={() => onGeneratePdf("master")} disabled={isGenerating}>
-            {isGenerating ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>DELA MATERIALSPEC</Text>}
-          </TouchableOpacity>
-          {!route.params?.fromArchive && (
-            <TouchableOpacity style={[styles.masterBtn, { backgroundColor: '#666', marginTop: 10 }]} onPress={handleArchiveProject}>
-              <Text style={styles.btnText}>SLUTFÖR & ARKIVERA PROJEKT</Text>
-            </TouchableOpacity>
-          )}
+        {/* KOSTNADS-KORT (Tid & Mil) */}
+        <View style={styles.detailCard}>
+          <View style={styles.detailHeader}>
+            <Ionicons name="time-outline" size={20} color="#34C759" />
+            <Text style={styles.detailTitle}>ARBETE, MIL & UTlägg</Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Totalt att fakturera:</Text>
+            <Text style={styles.value}>{formatCurrency(totals.costs)}</Text>
+          </View>
+          <Text style={styles.hintText}>Inkluderar alla rader från kostnadsloggen.</Text>
         </View>
+
+        {/* TOTAL-KORT */}
+        <View style={[styles.detailCard, { backgroundColor: '#1C1C1E' }]}>
+          <View style={styles.row}>
+            <Text style={[styles.label, { color: '#AAA' }]}>TOTALT ATT FAKTURERA (EXKL. MOMS)</Text>
+          </View>
+          <Text style={styles.totalValueLarge}>{formatCurrency(totals.totalOut)}</Text>
+        </View>
+
       </ScrollView>
 
-      <Modal visible={isModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={[styles.modalTitle, {color: '#000'}]}>EKONOMI: {formatProjectTitle(displayProject.name)}</Text>
-            <View style={styles.detailRow}><Text style={{color: '#333'}}>Netto Arbete:</Text><Text style={{color: '#333'}}>{formatNumber(arbeteExclVat)} kr</Text></View>
-            <View style={styles.detailRow}><Text style={{color: '#333'}}>Netto Material:</Text><Text style={{color: '#333'}}>{formatNumber(materialUtExclVat)} kr</Text></View>
-            <View style={styles.detailRow}><Text style={{color: '#333'}}>Moms (25%):</Text><Text style={{color: '#333'}}>{formatNumber(momsBelopp)} kr</Text></View>
-            <View style={[styles.detailRow, { marginTop: 10, borderTopWidth: 1, paddingTop: 10, borderColor: '#EEE' }]}>
-              <Text style={{fontWeight:'bold', color: '#000'}}>Totalt Brutto:</Text>
-              <Text style={{fontWeight:'bold', color: '#000'}}>{formatNumber(totalExclVat + momsBelopp)} kr</Text>
-            </View>
-            <TouchableOpacity style={styles.closeBtn} onPress={() => setIsModalVisible(false)}>
-              <Text style={styles.closeBtnText}>STÄNG</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      {/* FOOTER MED EXPORT */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 15 }]}>
+        <TouchableOpacity 
+          style={styles.exportBtn}
+          onPress={() => Alert.alert("PDF", "Genererar ekonomisk sammanställning...")}
+        >
+          <Ionicons name="document-text-outline" size={20} color="#FFF" />
+          <Text style={styles.exportBtnText}>EXPORTERA SLUTRAPPORT (PDF)</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FB', paddingHorizontal: 20 },
-  // --- NYA STILAR FÖR PUNKT 8 ---
-  centeredContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: '#F8F9FB', 
-    padding: 30 
-  },
-  noProjectText: { 
-    fontSize: 20, 
-    fontWeight: '900', 
-    color: '#1C1C1E', 
-    marginTop: 20 
-  },
-  noProjectSub: { 
-    fontSize: 14, 
-    color: '#8E8E93', 
-    textAlign: 'center', 
-    marginTop: 10, 
-    lineHeight: 20 
-  },
-  goBackBtn: {
-    marginTop: 25,
-    backgroundColor: WorkaholicTheme.colors.primary,
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 12,
-    elevation: 2
-  },
-  goBackBtnText: {
-    color: '#FFF',
-    fontWeight: '800',
-    fontSize: 14
-  },
-  // --- EXISTERANDE STILAR ---
-  shareCodeBtn: { backgroundColor: WorkaholicTheme.colors.primary, marginVertical: 10, padding: 12, borderRadius: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 2 },
-  shareCodeText: { color: '#FFF', fontWeight: 'bold', marginRight: 10 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  mainCard: { backgroundColor: WorkaholicTheme.colors.primary, borderRadius: 20, padding: 25, alignItems: 'center', marginTop: 10 },
-  brandLogo: { width: 140, height: 70, resizeMode: 'contain', marginBottom: 10 },
-  groupName: { color: 'rgba(255,255,255,0.7)', fontSize: 10, fontWeight: '800' },
-  totalAmount: { color: '#fff', fontSize: 32, fontWeight: '900' },
-  tapInfo: { color: 'rgba(255,255,255,0.5)', fontSize: 10, marginTop: 10 },
-  infoCard: { marginTop: 20, backgroundColor: '#fff', borderRadius: 15, padding: 15, borderWidth: 1, borderColor: '#EEE' },
-  infoTitle: { fontSize: 10, fontWeight: '900', color: WorkaholicTheme.colors.primary, marginBottom: 5 },
-  infoText: { fontSize: 16, fontWeight: '700', color: '#333' },
-  settingsSection: { marginTop: 15 },
-  settingCard: { backgroundColor: '#fff', borderRadius: 12, padding: 15, marginBottom: 8, borderWidth: 1, borderColor: '#EEE' },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  settingTitle: { fontWeight: '700', fontSize: 14, color: '#333' },
-  actions: { marginTop: 20 },
-  pdfBtn: { backgroundColor: WorkaholicTheme.colors.primary, padding: 18, borderRadius: 15, alignItems: 'center' },
-  masterBtn: { backgroundColor: '#4A90E2', padding: 18, borderRadius: 15, alignItems: 'center', marginTop: 10 },
-  btnText: { color: '#fff', fontWeight: '800' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 30 },
-  modalTitle: { fontSize: 14, fontWeight: '900', marginBottom: 20 },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  closeBtn: { backgroundColor: '#333', padding: 15, borderRadius: 15, marginTop: 15, alignItems: 'center' },
-  closeBtnText: { color: '#fff', fontWeight: '800' }
+  container: { flex: 1, backgroundColor: '#F8F9FB' },
+  scrollContent: { padding: 20 },
+  
+  // Huvudkort
+  mainCard: { backgroundColor: WorkaholicTheme.colors.primary, padding: 25, borderRadius: 30, elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
+  mainRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  mainLabel: { fontSize: 10, fontWeight: '900', color: 'rgba(255,255,255,0.7)', letterSpacing: 1.5 },
+  mainValue: { fontSize: 32, fontWeight: '900', color: '#FFF', marginTop: 5 },
+  marginBadge: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 12, borderRadius: 15, alignItems: 'center', minWidth: 80 },
+  marginText: { color: '#FFF', fontSize: 18, fontWeight: '900' },
+  marginLabelSmall: { color: 'rgba(255,255,255,0.6)', fontSize: 8, fontWeight: '900', marginTop: 2 },
+  dividerLight: { height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginVertical: 20 },
+  mainSubText: { fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: '600' },
+
+  sectionTitle: { fontSize: 12, fontWeight: '900', color: '#8E8E93', marginTop: 30, marginBottom: 15, marginLeft: 5, letterSpacing: 1 },
+
+  // Detaljkort
+  detailCard: { backgroundColor: '#FFF', borderRadius: 22, padding: 20, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
+  detailHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
+  detailTitle: { fontSize: 12, fontWeight: '900', color: '#1C1C1E', letterSpacing: 0.5 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  label: { fontSize: 13, color: '#8E8E93', fontWeight: '600' },
+  labelBold: { fontSize: 14, color: '#1C1C1E', fontWeight: '800' },
+  value: { fontSize: 14, color: '#1C1C1E', fontWeight: '700' },
+  valueBold: { fontSize: 16, color: '#34C759', fontWeight: '900' },
+  divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 10 },
+  hintText: { fontSize: 10, color: '#BBB', marginTop: 5, fontWeight: '500' },
+  totalValueLarge: { fontSize: 28, fontWeight: '900', color: '#FFF', marginTop: 10 },
+
+  // Footer
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', padding: 15, borderTopWidth: 1, borderTopColor: '#EEE' },
+  exportBtn: { backgroundColor: '#1C1C1E', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 18, gap: 10 },
+  exportBtnText: { color: '#FFF', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 }
 });

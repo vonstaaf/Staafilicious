@@ -130,7 +130,7 @@ export default function ArchivedProjectsScreen({ navigation }) {
                   <Text style={styles.summaryLabel}>Material (Produkter):</Text>
                   <Text style={styles.summaryValue}>{formatNumber(calculateTotals(selectedArchiveProj).materialSum)} kr</Text>
                 </View>
-                <View style={[styles.summaryRow, { marginTop: 15, borderTopWidth: 1, borderColor: '#EEE', paddingTop: 15 }]}>
+                <View style={[styles.summaryRow, { marginTop: 15, borderTopWidth: 1, borderColor: '#EEE', paddingTop: - 15 }]}>
                   <Text style={styles.totalLabel}>TOTALT NETTO:</Text>
                   <Text style={styles.totalValue}>{formatNumber(calculateTotals(selectedArchiveProj).total)} kr</Text>
                 </View>

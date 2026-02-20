@@ -46,3 +46,4 @@ google-services.json
 # Credentials och secrets
 credentials.json
 Sensitive Keystore information.txt
+.env.local

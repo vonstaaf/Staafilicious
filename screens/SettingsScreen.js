@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, Switch, TouchableOpacity, Alert, ScrollView, 
   Image, Platform, TextInput, Modal, ActivityIndicator, KeyboardAvoidingView, Keyboard
 } from "react-native";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WorkaholicTheme } from "../theme";
 import { auth, db } from "../firebaseConfig"; 
 import { signOut } from "firebase/auth";
@@ -12,7 +13,6 @@ import Button from "../components/Button";
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import { repairDatabaseArtNumbers } from "../utils/productSearch";
 import { useBadges } from "../context/BadgeContext";
 import { uploadLogoToCloud } from "../utils/settingsService";
 
@@ -24,11 +24,10 @@ const WHOLESALERS = [
 ];
 
 export default function SettingsScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { currentLogo, setCurrentLogo } = useBadges();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [repairLoading, setRepairLoading] = useState(false);
-
   const [integrations, setIntegrations] = useState({});
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [activeWholesaler, setActiveWholesaler] = useState(null);
@@ -49,31 +48,10 @@ export default function SettingsScreen({ navigation }) {
       const user = auth.currentUser;
       if (user) {
         const userDoc = await getDoc(doc(db, "users", user.uid));
-        if (userDoc.exists()) {
-          setIntegrations(userDoc.data().integrations || {});
-        }
+        if (userDoc.exists()) setIntegrations(userDoc.data().integrations || {});
       }
-    } catch (e) {
-      console.error("Laddningsfel:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDatabaseRepair = async () => {
-    setRepairLoading(true);
-    try {
-      const result = await repairDatabaseArtNumbers();
-      if (result.success) {
-        Alert.alert("Reparation klar", `${result.count} st artiklar har fixats.`);
-      } else {
-        Alert.alert("Info", result.message || "Inga artiklar behövde lagas.");
-      }
-    } catch (e) {
-      Alert.alert("Fel", "Kunde inte utföra reparationen.");
-    } finally {
-      setRepairLoading(false);
-    }
+    } catch (e) { console.error("Laddningsfel:", e); }
+    finally { setLoading(false); }
   };
 
   const pickImage = async () => {
@@ -90,11 +68,8 @@ export default function SettingsScreen({ navigation }) {
       try {
         setCurrentLogo(selectedUri);
         await uploadLogoToCloud(selectedUri);
-      } catch (e) {
-        Alert.alert("Fel", "Logotypen kunde inte sparas i molnet.");
-      } finally {
-        setLoading(false);
-      }
+      } catch (e) { Alert.alert("Fel", "Logotypen kunde inte sparas."); }
+      finally { setLoading(false); }
     }
   };
 
@@ -116,11 +91,8 @@ export default function SettingsScreen({ navigation }) {
       setIsModalVisible(false);
       Keyboard.dismiss();
       Alert.alert("Sparat", "Uppgifterna har uppdaterats.");
-    } catch (e) {
-      Alert.alert("Fel", "Kunde inte spara.");
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { Alert.alert("Fel", "Kunde inte spara."); }
+    finally { setLoading(false); }
   };
 
   const handleLogout = () => {
@@ -150,7 +122,7 @@ export default function SettingsScreen({ navigation }) {
   );
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top + 10 }]}>
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={28} color={WorkaholicTheme.colors.primary} />
@@ -196,21 +168,6 @@ export default function SettingsScreen({ navigation }) {
         />
       </SettingRow>
 
-      <Text style={styles.sectionTitle}>ADMIN VERKTYG</Text>
-      <SettingRow 
-        icon="build-outline" 
-        label="Reparera artikelnummer" 
-        subLabel="Fixar nollor på 08-artiklar i Firebase"
-        iconColor="#FF9500"
-        onPress={handleDatabaseRepair}
-      >
-        {repairLoading ? (
-          <ActivityIndicator size="small" color="#FF9500" />
-        ) : (
-          <Ionicons name="play-circle-outline" size={22} color="#FF9500" />
-        )}
-      </SettingRow>
-
       <Text style={styles.sectionTitle}>OM APPEN</Text>
       <SettingRow icon="information-circle-outline" label="Version">
         <Text style={styles.versionText}>{appVersion} ({buildVersion})</Text>
@@ -232,7 +189,6 @@ export default function SettingsScreen({ navigation }) {
                 <Ionicons name="close-circle" size={28} color="#CCC" />
               </TouchableOpacity>
             </View>
-            
             <ScrollView bounces={false}>
               <Text style={styles.inputLabel}>API KEY / CLIENT ID</Text>
               <TextInput 
@@ -242,7 +198,6 @@ export default function SettingsScreen({ navigation }) {
                 placeholder="Klistra in nyckel..."
                 autoCapitalize="none"
               />
-
               <Text style={styles.inputLabel}>API SECRET</Text>
               <TextInput 
                 style={styles.input} 
@@ -251,7 +206,6 @@ export default function SettingsScreen({ navigation }) {
                 placeholder="Klistra in secret..."
                 secureTextEntry
               />
-
               <Text style={styles.inputLabel}>KUNDNUMMER</Text>
               <TextInput 
                 style={styles.input} 
@@ -260,13 +214,8 @@ export default function SettingsScreen({ navigation }) {
                 placeholder="Ditt kundnummer"
                 keyboardType="numeric"
               />
-
               <View style={{marginTop: 20}}>
-                {loading ? (
-                  <ActivityIndicator color={WorkaholicTheme.colors.primary} />
-                ) : (
-                  <Button title="SPARA KOPPLING" onPress={saveIntegration} />
-                )}
+                {loading ? <ActivityIndicator color={WorkaholicTheme.colors.primary} /> : <Button title="SPARA KOPPLING" onPress={saveIntegration} />}
               </View>
             </ScrollView>
           </View>

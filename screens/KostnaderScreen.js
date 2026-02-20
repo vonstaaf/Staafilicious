@@ -9,12 +9,13 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  Keyboard
+  Keyboard,
+  StatusBar
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
-import InfoBox from "../components/InfoBox";
+import AppHeader from "../components/AppHeader";
 import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 
@@ -40,12 +41,13 @@ const getTodayDate = () => {
   return new Date().toLocaleDateString('sv-SE');
 };
 
-export default function KostnaderScreen({ navigation }) {
+export default function KostnaderScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { selectedProject, updateProject } = useContext(ProjectsContext);
+  
+  const project = route.params?.project || selectedProject;
   const [entries, setEntries] = useState([]);
 
-  // --- PUNKT 9: UTÖKAT STATE FÖR ALLA FÄLT ---
   const initialRowState = {
     date: getTodayDate(),
     description: "",
@@ -60,25 +62,21 @@ export default function KostnaderScreen({ navigation }) {
   const [editingIndex, setEditingIndex] = useState(null);
 
   useEffect(() => {
-    if (selectedProject?.kostnader) {
-      setEntries(selectedProject.kostnader);
+    if (project?.kostnader) {
+      setEntries(project.kostnader);
     } else {
       setEntries([]);
     }
-  }, [selectedProject]);
+  }, [project]);
 
-  // --- PUNKT 8: SKYDD OM INGET PROJEKT ÄR VALT ---
-  if (!selectedProject) {
+  if (!project) {
     return (
       <View style={[styles.centeredContainer, { paddingTop: insets.top }]}>
         <Ionicons name="calculator-outline" size={80} color="#CCC" />
         <Text style={styles.noProjectText}>INGET PROJEKT VALT</Text>
-        <Text style={styles.noProjectSub}>
-          Välj ett projekt i listan för att kunna registrera tider och kostnader.
-        </Text>
         <TouchableOpacity 
           style={styles.goBackBtn} 
-          onPress={() => navigation.navigate("Home")}
+          onPress={() => navigation.navigate("MainTabs")}
         >
           <Text style={styles.goBackBtnText}>GÅ TILL PROJEKTLISTAN</Text>
         </TouchableOpacity>
@@ -87,19 +85,17 @@ export default function KostnaderScreen({ navigation }) {
   }
 
   const saveEntry = async () => {
-    if (!selectedProject || !newRow.description.trim()) {
+    if (!newRow.description.trim()) {
       Alert.alert("Information", "Beskrivning krävs.");
       return;
     }
 
-    // Konvertera strängar till tal för beräkning
     const h = parseFloat(newRow.hours) || 0;
     const hp = parseFloat(newRow.hourPrice) || 0;
     const b = parseFloat(newRow.cars) || 0;
     const bc = parseFloat(newRow.carCost) || 0;
     const m = parseFloat(newRow.markup) || 0;
 
-    // Räkna ut radens totala kostnad (Punkt 1 Logik)
     const rowTotal = (h * hp) + (b * bc) + m;
 
     const item = {
@@ -110,28 +106,28 @@ export default function KostnaderScreen({ navigation }) {
       cars: b,
       carCost: bc,
       markup: m,
-      total: rowTotal, // Vi sparar totalen direkt för enklare summering senare
+      total: rowTotal,
     };
 
     let updated = editingIndex !== null ? [...entries] : [item, ...entries];
     if (editingIndex !== null) updated[editingIndex] = item;
 
     try {
-      await updateProject(selectedProject.id, { kostnader: updated });
+      await updateProject(project.id, { kostnader: updated });
       setNewRow(initialRowState);
       setEditingIndex(null);
       Keyboard.dismiss();
     } catch (e) {
-      Alert.alert("Fel", "Kunde inte spara rader.");
+      Alert.alert("Fel", "Kunde inte spara.");
     }
   };
 
   const deleteEntry = (index) => {
-    Alert.alert("Radera", "Vill du ta bort raden från loggen?", [
-      { text: "Avbryt", style: "cancel" },
+    Alert.alert("Radera?", "Vill du ta bort raderingen?", [
+      { text: "Avbryt" },
       { text: "Radera", style: "destructive", onPress: async () => {
           const updated = entries.filter((_, i) => i !== index);
-          await updateProject(selectedProject.id, { kostnader: updated });
+          await updateProject(project.id, { kostnader: updated });
         }
       }
     ]);
@@ -150,31 +146,48 @@ export default function KostnaderScreen({ navigation }) {
   };
 
   const totalSum = entries.reduce((acc, it) => acc + (parseFloat(it.total) || 0), 0);
-  const formattedProjectName = selectedProject ? capitalizeFirst(selectedProject.name) : "";
 
   return (
-    <View style={{ flex: 1, backgroundColor: WorkaholicTheme.colors.background }}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"} 
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
-      >
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+      
+      <AppHeader 
+        title="KOSTNADER & TID" 
+        subTitle={capitalizeFirst(project.name)} 
+        navigation={navigation} 
+      />
+
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <FlatList
           data={entries}
           keyExtractor={(_, i) => i.toString()}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ padding: 15, paddingBottom: insets.bottom + 100 }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 100 }}
           ListHeaderComponent={
             <>
-              <InfoBox 
-                title="Arbetslogg & Kostnader" 
-                items={[`Värde: ${formatNumber(totalSum)} kr`, `Projekt: ${formattedProjectName}`]} 
-              />
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>{editingIndex !== null ? "REDIGERA RAD" : "NY REGISTRERING"}</Text>
+              {/* Summeringskort - Pro Style */}
+              <View style={styles.summaryCard}>
+                <View style={styles.summaryRow}>
+                  <View>
+                    <Text style={styles.summaryLabel}>TOTALT VÄRDE (LOGGAT)</Text>
+                    <Text style={styles.summaryValue}>{formatNumber(totalSum)} kr</Text>
+                  </View>
+                  <View style={styles.badge}>
+                    <Ionicons name="time-outline" size={14} color="#FFF" />
+                    <Text style={styles.badgeText}>{entries.length} RADER</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Inmatningskort */}
+              <View style={styles.inputCard}>
+                <Text style={styles.sectionLabel}>
+                    {editingIndex !== null ? "REDIGERA REGISTRERING" : "NY REGISTRERING"}
+                </Text>
                 
                 <View style={styles.inputRow}>
-                   <View style={{flex: 1.5}}>
+                   <View style={{flex: 1.2}}>
                       <Text style={styles.miniLabel}>DATUM</Text>
                       <TextInput 
                         value={newRow.date} 
@@ -182,13 +195,14 @@ export default function KostnaderScreen({ navigation }) {
                         style={styles.input} 
                       />
                    </View>
-                   <View style={{flex: 3}}>
-                      <Text style={styles.miniLabel}>BESKRIVNING</Text>
+                   <View style={{flex: 2}}>
+                      <Text style={styles.miniLabel}>BESKRIVNING / MOMENT</Text>
                       <TextInput
-                        placeholder="Arbetsmoment..."
+                        placeholder="Vad har gjorts?"
                         value={newRow.description}
                         onChangeText={(v) => setNewRow(s => ({ ...s, description: v }))}
                         style={styles.input}
+                        placeholderTextColor="#BBB"
                       />
                    </View>
                 </View>
@@ -216,7 +230,7 @@ export default function KostnaderScreen({ navigation }) {
 
                 <View style={styles.inputRow}>
                   <View style={styles.inputGroup}>
-                    <Text style={styles.miniLabel}>BILAR</Text>
+                    <Text style={styles.miniLabel}>ANTAL BILAR</Text>
                     <TextInput 
                       keyboardType="decimal-pad" 
                       value={newRow.cars} 
@@ -225,7 +239,7 @@ export default function KostnaderScreen({ navigation }) {
                     />
                   </View>
                   <View style={styles.inputGroup}>
-                    <Text style={styles.miniLabel}>BILKOSTNAD</Text>
+                    <Text style={styles.miniLabel}>KOSTNAD / BIL</Text>
                     <TextInput 
                       keyboardType="decimal-pad" 
                       value={newRow.carCost} 
@@ -234,44 +248,70 @@ export default function KostnaderScreen({ navigation }) {
                     />
                   </View>
                   <View style={styles.inputGroup}>
-                    <Text style={styles.miniLabel}>PÅSLAG %</Text>
-                     <TextInput keyboardType="decimal-pad" value={newRow.markup} onChangeText={v => setNewRow(s => ({...s, markup: decimalOnly(v)}))} style={styles.input} />
-                     </View>
+                    <Text style={styles.miniLabel}>ÖVRIGT (KR)</Text>
+                    <TextInput 
+                      keyboardType="decimal-pad" 
+                      value={newRow.markup} 
+                      onChangeText={v => setNewRow(s => ({...s, markup: decimalOnly(v)}))} 
+                      style={styles.input} 
+                    />
+                  </View>
                 </View>
 
                 <View style={styles.buttonRow}>
-                    <View style={{flex: 1}}>
-                        <Button title={editingIndex !== null ? "UPPDATERA RAD" : "LÄGG TILL I LOGG"} type="primary" onPress={saveEntry} />
-                    </View>
+                    <TouchableOpacity 
+                        style={[styles.mainAddBtn, editingIndex !== null && { backgroundColor: '#FFB300' }]} 
+                        onPress={saveEntry}
+                    >
+                        <Text style={styles.mainAddBtnText}>
+                            {editingIndex !== null ? "UPPDATERA LOGG" : "LÄGG TILL I LOGG"}
+                        </Text>
+                    </TouchableOpacity>
+                    
                     {editingIndex !== null && (
-                        <TouchableOpacity style={{ marginLeft: 15, padding: 10 }} onPress={() => { setEditingIndex(null); setNewRow(initialRowState); }}>
-                            <Text style={{color: '#666', fontWeight: '600'}}>Avbryt</Text>
+                        <TouchableOpacity style={styles.cancelBtn} onPress={() => { setEditingIndex(null); setNewRow(initialRowState); }}>
+                            <Text style={styles.cancelBtnText}>Avbryt</Text>
                         </TouchableOpacity>
                     )}
                 </View>
               </View>
-              <Text style={styles.sectionTitle}>TIDIGARE REGISTRERINGAR</Text>
+
+              <Text style={styles.listTitle}>REGISTRERINGSHISTORIK</Text>
             </>
           }
           renderItem={({ item, index }) => (
-            <View style={styles.itemRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.itemInfo}>{item.description}</Text>
-                <Text style={styles.itemSub}>
-                  {item.date} • {item.hours}h ({item.hourPrice}:-) • {item.cars} bil • {formatNumber(item.total)} kr
-                </Text>
+            <View style={styles.entryCard}>
+              <View style={styles.entryMain}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.entryDesc}>{item.description}</Text>
+                  <Text style={styles.entrySub}>
+                    {item.date} • {item.hours}h ({item.hourPrice}:-) • {item.cars} bil
+                  </Text>
+                </View>
+                <View style={styles.entryPriceArea}>
+                  <Text style={styles.entryTotal}>{formatNumber(item.total)}:-</Text>
+                  <Text style={styles.entryExclVat}>exkl. moms</Text>
+                </View>
               </View>
-              <View style={{ flexDirection: 'row', gap: 15 }}>
-                <TouchableOpacity onPress={() => startEdit(item, index)}>
-                  <Ionicons name="pencil" size={20} color={WorkaholicTheme.colors.primary} />
+              <View style={styles.entryActions}>
+                <TouchableOpacity onPress={() => startEdit(item, index)} style={styles.actionBtn}>
+                  <Ionicons name="pencil" size={16} color={WorkaholicTheme.colors.primary} />
+                  <Text style={styles.actionBtnText}>Redigera</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => deleteEntry(index)}>
-                  <Ionicons name="trash-outline" size={20} color={WorkaholicTheme.colors.error} />
+                <View style={styles.vDivider} />
+                <TouchableOpacity onPress={() => deleteEntry(index)} style={styles.actionBtn}>
+                  <Ionicons name="trash-outline" size={16} color={WorkaholicTheme.colors.error} />
+                  <Text style={[styles.actionBtnText, {color: WorkaholicTheme.colors.error}]}>Radera</Text>
                 </TouchableOpacity>
               </View>
             </View>
           )}
-          ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 30, color: '#999', fontWeight: '600' }}>Inga registreringar än.</Text>}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+                <Ionicons name="calendar-outline" size={50} color="#DDD" />
+                <Text style={styles.emptyText}>Inga registreringar än.</Text>
+            </View>
+          }
         />
       </KeyboardAvoidingView>
     </View>
@@ -279,50 +319,46 @@ export default function KostnaderScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  // --- NYA STILAR FÖR PUNKT 8 ---
-  centeredContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: '#F8F9FB', 
-    padding: 30 
-  },
-  noProjectText: { 
-    fontSize: 20, 
-    fontWeight: '900', 
-    color: '#1C1C1E', 
-    marginTop: 20 
-  },
-  noProjectSub: { 
-    fontSize: 14, 
-    color: '#8E8E93', 
-    textAlign: 'center', 
-    marginTop: 10, 
-    lineHeight: 20 
-  },
-  goBackBtn: {
-    marginTop: 25,
-    backgroundColor: WorkaholicTheme.colors.primary,
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 12,
-    elevation: 2
-  },
-  goBackBtnText: {
-    color: '#FFF',
-    fontWeight: '800',
-    fontSize: 14
-  },
-  // --- EXISTERANDE STILAR ---
-  card: { backgroundColor: "#fff", borderRadius: 15, padding: 15, marginBottom: 15, elevation: 4 },
-  cardTitle: { fontSize: 14, fontWeight: "800", marginBottom: 15, color: WorkaholicTheme.colors.primary },
-  inputRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  container: { flex: 1, backgroundColor: '#F8F9FB' },
+  centeredContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 },
+  noProjectText: { fontSize: 18, fontWeight: '900', color: '#1C1C1E', marginTop: 20 },
+  goBackBtn: { marginTop: 25, backgroundColor: WorkaholicTheme.colors.primary, paddingVertical: 15, paddingHorizontal: 30, borderRadius: 12 },
+  goBackBtnText: { color: '#FFF', fontWeight: '800' },
+
+  summaryCard: { backgroundColor: WorkaholicTheme.colors.primary, padding: 20, borderRadius: 25, marginBottom: 20, elevation: 4 },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryLabel: { fontSize: 10, fontWeight: '900', color: 'rgba(255,255,255,0.7)', letterSpacing: 1 },
+  summaryValue: { fontSize: 24, fontWeight: '900', color: '#FFF', marginTop: 4 },
+  badge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  badgeText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
+
+  inputCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 25, marginBottom: 25, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
+  sectionLabel: { fontSize: 10, fontWeight: "900", color: "#CCC", letterSpacing: 1, marginBottom: 20 },
+  inputRow: { flexDirection: "row", gap: 12, marginBottom: 15 },
   inputGroup: { flex: 1 },
-  miniLabel: { fontSize: 9, color: "#999", marginBottom: 4, fontWeight: '800' },
-  input: { borderWidth: 1, borderColor: "#EEE", borderRadius: 10, padding: 10, backgroundColor: "#F9F9F9", fontSize: 13, color: '#333', fontWeight: '600' },
-  buttonRow: { flexDirection: 'row', marginTop: 10 },
-  sectionTitle: { fontSize: 11, fontWeight: '800', color: '#8E8E93', marginBottom: 10, marginTop: 5, letterSpacing: 0.5 },
-  itemRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 15, borderRadius: 12, marginBottom: 8, elevation: 2 },
-  itemInfo: { fontWeight: "700", fontSize: 14 },
-  itemSub: { fontSize: 12, color: "#999", marginTop: 2 }
+  miniLabel: { fontSize: 9, color: "#AAA", marginBottom: 6, fontWeight: '900', letterSpacing: 0.5 },
+  input: { backgroundColor: '#F5F5F7', borderRadius: 12, padding: 12, fontSize: 14, fontWeight: '700', color: '#1C1C1E' },
+  
+  buttonRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 5 },
+  mainAddBtn: { flex: 1, backgroundColor: WorkaholicTheme.colors.primary, padding: 16, borderRadius: 15, alignItems: 'center' },
+  mainAddBtnText: { color: '#FFF', fontWeight: '900', fontSize: 14 },
+  cancelBtn: { padding: 15 },
+  cancelBtnText: { color: '#8E8E93', fontWeight: '800', fontSize: 13 },
+
+  listTitle: { fontSize: 13, fontWeight: '900', color: '#8E8E93', marginBottom: 15, marginLeft: 5, letterSpacing: 1 },
+  entryCard: { backgroundColor: '#FFF', borderRadius: 20, marginBottom: 12, elevation: 2, overflow: 'hidden', borderWidth: 1, borderColor: '#F0F0F0' },
+  entryMain: { flexDirection: 'row', padding: 18, alignItems: 'center' },
+  entryDesc: { fontSize: 15, fontWeight: '800', color: '#1C1C1E' },
+  entrySub: { fontSize: 11, color: '#AAA', marginTop: 4, fontWeight: '600' },
+  entryPriceArea: { alignItems: 'flex-end', marginLeft: 10 },
+  entryTotal: { fontSize: 16, fontWeight: '900', color: '#1C1C1E' },
+  entryExclVat: { fontSize: 9, color: '#CCC', fontWeight: '800', marginTop: 2, textTransform: 'uppercase' },
+  
+  entryActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#F8F8F8', backgroundColor: '#FAFAFA' },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 6 },
+  actionBtnText: { fontSize: 12, fontWeight: '800', color: WorkaholicTheme.colors.primary },
+  vDivider: { width: 1, backgroundColor: '#EEE' },
+
+  emptyContainer: { alignItems: 'center', marginTop: 40, opacity: 0.5 },
+  emptyText: { marginTop: 10, color: '#999', fontWeight: '700', fontSize: 14 }
 });

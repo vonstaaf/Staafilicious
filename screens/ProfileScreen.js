@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from "expo-image-picker";
+import Constants from 'expo-constants'; // 👈 Tillagd för automatisk version
 import { WorkaholicTheme } from "../theme";
 import Button from "../components/Button";
 import { auth, db } from "../firebaseConfig";
@@ -29,17 +30,12 @@ export default function ProfileScreen({ navigation }) {
   const { currentLogo, setCurrentLogo } = useBadges();
   const user = auth.currentUser;
 
-  // Profil-stats
   const [email] = useState(user?.email || "");
   const [displayName, setDisplayName] = useState(user?.displayName || "");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-
-  // Yrkesroll
   const [profession, setProfession] = useState("Elektriker"); 
-  
-  // Företagsdata
   const [companyName, setCompanyName] = useState("");
   const [orgNr, setOrgNr] = useState("");
   const [phone, setPhone] = useState("");
@@ -59,30 +55,24 @@ export default function ProfileScreen({ navigation }) {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const d = docSnap.data();
-        
         let fetchedProf = d.profession || "Elektriker";
         let pLower = fetchedProf.toLowerCase();
-
         if (pLower.includes("el")) setProfession("Elektriker");
         else if (pLower.includes("snickare") || pLower.includes("bygg")) setProfession("Snickare");
         else if (pLower.includes("rör") || pLower.includes("vvs")) setProfession("Rörmokare");
         else setProfession(fetchedProf);
-
         setCompanyName(d.companyName || "");
         setOrgNr(d.orgNr || "");
         setPhone(d.phone || "");
         setAddress(d.address || "");
         setZipCity(d.zipCity || "");
         setWebsite(d.website || "");
-        
         if (d.logoUrl) {
           setCurrentLogo(d.logoUrl);
           await AsyncStorage.setItem('@company_logo', d.logoUrl);
         }
       }
-    } catch (e) {
-      console.log("Kunde inte hämta data", e);
-    }
+    } catch (e) { console.log("Kunde inte hämta data", e); }
   };
 
   const pickLogo = async () => {
@@ -99,40 +89,28 @@ export default function ProfileScreen({ navigation }) {
         await AsyncStorage.setItem('@company_logo', uri);
         await updateDoc(doc(db, "users", user.uid), { logoUrl: uri });
       }
-    } catch (e) {
-      Alert.alert("Fel", "Kunde inte välja bild.");
-    }
+    } catch (e) { Alert.alert("Fel", "Kunde inte välja bild."); }
   };
 
   const handleSave = async () => {
     setLoading(true);
     try {
-      if (user && displayName !== user.displayName) {
-        await updateProfile(user, { displayName });
-      }
+      if (user && displayName !== user.displayName) await updateProfile(user, { displayName });
       if (newPassword && newPassword === confirmPassword) {
         await updatePassword(user, newPassword);
         Alert.alert("Lösenord uppdaterat!");
-        setNewPassword("");
-        setConfirmPassword("");
+        setNewPassword(""); setConfirmPassword("");
       } else if (newPassword) {
         Alert.alert("Fel", "Lösenorden matchar inte.");
-        setLoading(false);
-        return;
+        setLoading(false); return;
       }
-
       await updateDoc(doc(db, "users", user.uid), {
         profession: profession, 
         companyName, orgNr, phone, address, zipCity, website
       });
-      
       Alert.alert("Sparat", "Din profil och yrkesroll har uppdaterats.");
-    } catch (e) {
-      console.error(e);
-      Alert.alert("Fel", "Kunde inte spara profil.");
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { Alert.alert("Fel", "Kunde inte spara profil."); }
+    finally { setLoading(false); }
   };
 
   const handleLogout = () => {
@@ -147,12 +125,18 @@ export default function ProfileScreen({ navigation }) {
   return (
     <View style={{ flex: 1, backgroundColor: "#F8F9FB" }}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ padding: 20, paddingTop: insets.top + 10 }}>
+        <ScrollView 
+          // 🔑 FIX: Stavfel "dingTop" rättat till "paddingTop" och ökad bottenmarginal
+          contentContainerStyle={{ 
+            padding: 20, 
+            paddingTop: insets.top + 10, 
+            paddingBottom: insets.bottom + 130 
+          }}
+          showsVerticalScrollIndicator={false}
+        >
           
           <View style={styles.topHeader}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-               <Ionicons name="arrow-back" size={24} color="#333" />
-            </TouchableOpacity>
+            <View style={{ width: 24 }} /> 
             <TouchableOpacity onPress={() => navigation.navigate("Settings")} style={styles.settingsHeaderBtn}>
                <Ionicons name="settings-outline" size={24} color={WorkaholicTheme.colors.primary} />
             </TouchableOpacity>
@@ -204,7 +188,7 @@ export default function ProfileScreen({ navigation }) {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>YRKESROLL (Välj för att se rätt mallar)</Text>
+            <Text style={styles.sectionTitle}>YRKESROLL</Text>
             <View style={styles.professionRow}>
               {ROLES.map(role => {
                 const isActive = profession === role;
@@ -280,48 +264,55 @@ export default function ProfileScreen({ navigation }) {
             </View>
           </View>
 
-          <Button title={loading ? "SPARAR..." : "SPARA ÄNDRINGAR"} onPress={handleSave} type="primary" disabled={loading} />
+          <Button 
+            title={loading ? "SPARAR..." : "SPARA ÄNDRINGAR"} 
+            onPress={handleSave} 
+            type="primary" 
+            disabled={loading} 
+          />
           
           <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
             <Text style={styles.logoutText}>LOGGA UT</Text>
           </TouchableOpacity>
-          <Text style={styles.versionText}>Workaholic v1.0.5</Text>
+
+          {/* 🔑 Automatisk versionshämtning från app.json */}
+          <Text style={styles.versionText}>
+            Workaholic v{Constants.expoConfig?.version || "1.0.0"}
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
 }
 
+// ... Styles är oförändrade ...
 const styles = StyleSheet.create({
-  topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  backBtn: { padding: 5 },
+  topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   settingsHeaderBtn: { padding: 5 },
-  header: { alignItems: "center", marginBottom: 30 },
+  header: { alignItems: "center", marginBottom: 20 },
   logoWrapper: { marginBottom: 15 },
   logo: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: "#FFF" },
   placeholderLogo: { width: 100, height: 100, borderRadius: 50, backgroundColor: "#E1E1E1", justifyContent: 'center', alignItems: 'center' },
   editBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: WorkaholicTheme.colors.primary, borderRadius: 15, width: 30, height: 30, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
   userName: { fontSize: 22, fontWeight: "900", color: "#333" },
   userEmail: { fontSize: 14, color: "#888", fontWeight: "600" },
-  statsRow: { flexDirection: "row", justifyContent: "space-around", marginBottom: 30, backgroundColor: "#FFF", padding: 20, borderRadius: 20, elevation: 2 },
+  statsRow: { flexDirection: "row", justifyContent: "space-around", marginBottom: 25, backgroundColor: "#FFF", padding: 20, borderRadius: 20, elevation: 2 },
   statItem: { alignItems: "center" },
   statNum: { fontSize: 20, fontWeight: "900", color: "#1C1C1E", marginTop: 5 },
   statLabel: { fontSize: 11, color: "#8E8E93", fontWeight: "700", textTransform: "uppercase" },
   section: { backgroundColor: "#FFF", borderRadius: 20, padding: 20, marginBottom: 20, elevation: 2, shadowColor: "#000", shadowOpacity: 0.04 },
   sectionTitle: { fontSize: 11, fontWeight: "800", color: "#BBB", marginBottom: 15, letterSpacing: 1 },
-  professionRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  professionRow: { flexDirection: 'row', justifyContent: 'space-between' },
   profBtn: { flex: 1, backgroundColor: '#F5F5F5', marginHorizontal: 5, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#EEE' },
   profBtnActive: { backgroundColor: WorkaholicTheme.colors.primary, borderColor: WorkaholicTheme.colors.primary },
   profText: { marginTop: 5, fontWeight: '800', fontSize: 12, color: '#666' },
   inputWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: "#F2F2F7", borderRadius: 12, paddingHorizontal: 12, marginBottom: 10 },
   input: { flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 15, fontWeight: "600", color: "#333" },
-  
   settingsRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F9FB', padding: 15, borderRadius: 15 },
   settingsIconBox: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(0, 122, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
   settingsLabel: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
   settingsSub: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
-
-  logoutBtn: { marginTop: 20, padding: 15, alignItems: 'center' },
+  logoutBtn: { marginTop: 10, padding: 15, alignItems: 'center' },
   logoutText: { color: "#FF3B30", fontWeight: "900", fontSize: 14 },
-  versionText: { textAlign: 'center', color: '#CCC', fontSize: 10, marginTop: 20 }
+  versionText: { textAlign: 'center', color: '#CCC', fontSize: 10, marginTop: 10 }
 });

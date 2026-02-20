@@ -43,7 +43,7 @@ export default function InspectionHistoryScreen({ navigation }) {
         </Text>
         <TouchableOpacity 
           style={styles.goBackBtn} 
-          onPress={() => navigation.navigate("Home")}
+          onPress={() => navigation.navigate("MainTabs")}
         >
           <Text style={styles.goBackBtnText}>GÅ TILL PROJEKTLISTAN</Text>
         </TouchableOpacity>

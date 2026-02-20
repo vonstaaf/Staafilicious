@@ -97,14 +97,18 @@ export const searchProducts = async (searchQuery, wholesalerId = 'local') => {
         // 08-fix direkt vid cache-bygget
         if (art.length === 5 && art.startsWith('8')) art = "0" + art;
 
+        // 🛠 KROCKKUDDE: Säkra att priset blir ett giltigt nummer även om det saknas i db
+        const rawPrice = item.price || item.purchasePrice || 0;
+        const safePrice = parseFloat(String(rawPrice).replace(',', '.'));
+
         tempArray.push({
           ...item,
           dbKey: key,
           label: item.label || item.name || "Namn saknas",
           artNr: art, 
-          originalPrice: parseFloat(item.price || item.purchasePrice || 0),
+          originalPrice: isNaN(safePrice) ? 0 : safePrice,
           // ⚡ SUPER-INDEX: En sammanslagen sträng för blixtsnabb sökning
-          _s: (art + " " + (item.label || item.name)).toLowerCase()
+          _s: (art + " " + (item.label || item.name || "")).toLowerCase()
         });
       }
 
@@ -114,7 +118,7 @@ export const searchProducts = async (searchQuery, wholesalerId = 'local') => {
     }
 
     // 3. ⚡ Blixtsnabb sökning (Vi söker nu bara i ETT fält istället för tre)
-    console.log(`🔎 Söker efter "${term}"...`);
+    // console.log(`🔎 Söker efter "${term}"...`); // Avkommentera för att debugga
     let baseResults = cachedProducts.filter(item => item._s.includes(term));
 
     // 4. Applicera grossist-priser
@@ -125,9 +129,12 @@ export const searchProducts = async (searchQuery, wholesalerId = 'local') => {
         if (wholesalerId === 'solar') factor = 0.90;
         if (wholesalerId === 'ahlsell') factor = 0.92;
         
+        // 🛠 KROCKKUDDE: Säkrar att originalPrice finns
+        const basePrice = item.originalPrice || 0;
+        
         return {
           ...item,
-          price: (item.originalPrice * factor).toFixed(2),
+          price: (basePrice * factor).toFixed(2),
           wholesalerName: wholesalerId.charAt(0).toUpperCase() + wholesalerId.slice(1),
           isWholesalerPrice: true
         };
@@ -135,7 +142,7 @@ export const searchProducts = async (searchQuery, wholesalerId = 'local') => {
     } else {
       baseResults = baseResults.map(item => ({
         ...item,
-        price: item.originalPrice.toFixed(2),
+        price: (item.originalPrice || 0).toFixed(2),
         isWholesalerPrice: false
       }));
     }
