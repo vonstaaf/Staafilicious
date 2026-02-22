@@ -1,5 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // 🔑 NYTT: Hämtar lokala minnet
 import { getBase64Image } from '../imageHelpers';
 
 const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
@@ -11,8 +12,12 @@ export const handleInspectionPdf = async (project, inspection, companyData) => {
     // 1. App-loggan (Base64)
     const appLogo = await getBase64Image(APP_LOGO_URL);
     
-    // 2. Företagsloggan (Base64)
-    const companyLogo = company.logoUrl ? await getBase64Image(company.logoUrl) : null;
+    // 2. 🔑 NYTT: Skottsäker hämtning av Företagsloggan
+    let logoToUse = company.logoUrl;
+    if (!logoToUse) {
+      logoToUse = await AsyncStorage.getItem('@company_logo'); // Leta lokalt om molnet är tomt
+    }
+    const companyLogo = logoToUse ? await getBase64Image(logoToUse) : null;
     
     const cName = company.companyName || company.name || "";
     
@@ -111,7 +116,7 @@ export const handleInspectionPdf = async (project, inspection, companyData) => {
                    }).join('')}
                  </tbody>
                </table>
-             `;
+              `;
           }).join('')}
 
           ${processedImages.length > 0 ? `

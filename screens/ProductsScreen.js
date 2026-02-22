@@ -13,7 +13,8 @@ import {
   ActivityIndicator,
   Modal,
   SafeAreaView,
-  StatusBar
+  StatusBar,
+  ScrollView // 🔑 HÄR ÄR DEN SAKNADE IMPORTEN!
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";

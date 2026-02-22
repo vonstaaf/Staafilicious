@@ -47,3 +47,5 @@ google-services.json
 credentials.json
 Sensitive Keystore information.txt
 .env.local
+
+.env.local

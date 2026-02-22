@@ -1,4 +1,4 @@
-import React, { useContext, useMemo } from "react";
+import React, { useContext, useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,13 +6,21 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
-  Alert
+  Alert,
+  ActivityIndicator
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProjectsContext } from "../context/ProjectsContext";
 import { WorkaholicTheme } from "../theme";
 import AppHeader from "../components/AppHeader";
+
+// 🔑 NYTT: Importera Firebase för att hämta företagsinfon
+import { auth, db } from "../firebaseConfig";
+import { doc, onSnapshot } from "firebase/firestore";
+
+// 🔑 NYTT: Importera båda PDF-funktionerna
+import { handleCustomerPdf, handleMaterialPdf } from "../utils/pdfActions";
 
 // Hjälpfunktion för att formatera valuta
 const formatCurrency = (amount) => {
@@ -27,6 +35,23 @@ export default function SettlementScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { selectedProject } = useContext(ProjectsContext);
   const project = route.params?.project || selectedProject;
+
+  // States för laddningssnurrorna och företagsdatan
+  const [isGeneratingCustomer, setIsGeneratingCustomer] = useState(false);
+  const [isGeneratingMaterial, setIsGeneratingMaterial] = useState(false);
+  const [companyData, setCompanyData] = useState(null);
+
+  // 🔑 NYTT: Hämta företagsinfon och loggan i bakgrunden så de kan skickas till PDF:en
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+    const unsubscribe = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        setCompanyData(docSnap.data());
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // --- EKONOMISKA BERÄKNINGAR ---
   const totals = useMemo(() => {
@@ -52,6 +77,36 @@ export default function SettlementScreen({ navigation, route }) {
       margin: margin
     };
   }, [project]);
+
+  // Generera Kundunderlag PDF
+  const onGenerateCustomerPdf = async () => {
+    setIsGeneratingCustomer(true);
+    try {
+      await handleCustomerPdf(project, companyData); // 🔑 Nu skickar vi in rätt info!
+    } catch (error) {
+      console.log("PDF Error:", error);
+      Alert.alert("Fel", "Kunde inte skapa kundunderlag.");
+    } finally {
+      setIsGeneratingCustomer(false);
+    }
+  };
+
+  // Generera Materialspec PDF
+  const onGenerateMaterialPdf = async () => {
+    if (!project?.products || project.products.length === 0) {
+      Alert.alert("Inga artiklar", "Lägg till material innan du skapar en PDF.");
+      return;
+    }
+    setIsGeneratingMaterial(true);
+    try {
+      await handleMaterialPdf(project, companyData); // 🔑 Nu skickar vi in rätt info!
+    } catch (error) {
+      console.log("PDF Error:", error);
+      Alert.alert("Fel", "Kunde inte skapa materialspecifikation.");
+    } finally {
+      setIsGeneratingMaterial(false);
+    }
+  };
 
   if (!project) return null;
 
@@ -133,13 +188,39 @@ export default function SettlementScreen({ navigation, route }) {
 
       {/* FOOTER MED EXPORT */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + 15 }]}>
-        <TouchableOpacity 
-          style={styles.exportBtn}
-          onPress={() => Alert.alert("PDF", "Genererar ekonomisk sammanställning...")}
-        >
-          <Ionicons name="document-text-outline" size={20} color="#FFF" />
-          <Text style={styles.exportBtnText}>EXPORTERA SLUTRAPPORT (PDF)</Text>
-        </TouchableOpacity>
+        <View style={styles.footerButtonRow}>
+          
+          <TouchableOpacity 
+            style={[styles.exportBtn, { flex: 1, backgroundColor: WorkaholicTheme.colors.primary }]}
+            onPress={onGenerateMaterialPdf}
+            disabled={isGeneratingMaterial || isGeneratingCustomer}
+          >
+            {isGeneratingMaterial ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <>
+                <Ionicons name="cube-outline" size={16} color="#FFF" />
+                <Text style={styles.exportBtnText}>MATERIALSPEC</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.exportBtn, { flex: 1 }]}
+            onPress={onGenerateCustomerPdf}
+            disabled={isGeneratingMaterial || isGeneratingCustomer}
+          >
+            {isGeneratingCustomer ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <>
+                <Ionicons name="document-text-outline" size={16} color="#FFF" />
+                <Text style={styles.exportBtnText}>KUNDUNDERLAG</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+        </View>
       </View>
     </View>
   );
@@ -177,6 +258,7 @@ const styles = StyleSheet.create({
 
   // Footer
   footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', padding: 15, borderTopWidth: 1, borderTopColor: '#EEE' },
-  exportBtn: { backgroundColor: '#1C1C1E', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 18, borderRadius: 18, gap: 10 },
-  exportBtnText: { color: '#FFF', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 }
+  footerButtonRow: { flexDirection: 'row', gap: 10 },
+  exportBtn: { backgroundColor: '#1C1C1E', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 16, gap: 6 },
+  exportBtnText: { color: '#FFF', fontWeight: '900', fontSize: 11, letterSpacing: 0.5 }
 });

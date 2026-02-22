@@ -1,5 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // 🔑 NYTT: Hämtar lokala minnet
 import { getBase64Image } from '../imageHelpers';
 
 const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
@@ -19,8 +20,18 @@ const JFB_TEXT = `
 export const handleGroupSchedulePdf = async (project, scheduleData, companyData) => {
   try {
     const company = companyData || {};
+    
+    // 1. App-loggan
     const appLogo = await getBase64Image(APP_LOGO_URL);
-    const companyLogo = company.logoUrl ? await getBase64Image(company.logoUrl) : null;
+    
+    // 2. 🔑 NYTT: Skottsäker hämtning av Företagsloggan
+    let logoToUse = company.logoUrl;
+    if (!logoToUse) {
+      logoToUse = await AsyncStorage.getItem('@company_logo'); // Leta lokalt om molnet är tomt
+    }
+    const companyLogo = logoToUse ? await getBase64Image(logoToUse) : null;
+    
+    // 3. Företagsnamn
     const cName = company.companyName || company.name || "";
 
     const rows = scheduleData.rows || [];
@@ -29,9 +40,9 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
     const pageSize = scheduleData.pageSize || "A4";
     const isA5 = pageSize === "A5";
     
-    // Inställningar för rader
-    const rowsPerCol = isA5 ? 20 : 42; 
-    const rowHeight = isA5 ? 28 : 22; 
+    // Rader och höjd
+    const rowsPerCol = isA5 ? 20 : 36; 
+    const rowHeight = isA5 ? 28 : 24; 
     const rowsPerPage = rowsPerCol * 2;
 
     const pages = [];
@@ -47,8 +58,8 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
             body { font-family: Helvetica, Arial, sans-serif; margin: 0; padding: 0; background: #fff; }
             
             .page { 
-              width: 210mm; /* Fast bredd för A4 */
-              height: 297mm; /* Fast höjd för A4 */
+              width: 210mm; 
+              height: 297mm; 
               padding: 15mm; 
               page-break-after: always; 
               display: flex; 
@@ -87,7 +98,7 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
               line-height: 1.2;
               padding: 8px;
               background-color: #f9f9f9;
-              white-space: normal; /* Tillåt radbrytning i JFB-texten */
+              white-space: normal;
               vertical-align: top;
             }
 
@@ -106,7 +117,6 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
             const left = pageRows.slice(0, rowsPerCol);
             let right = pageRows.slice(rowsPerCol);
             
-            // Fyll ut kolumnerna så de alltid är lika långa
             while (left.length < rowsPerCol) left.push({ id: "", label: "", current: "", area: "" });
             while (right.length < rowsPerCol) right.push({ id: "", label: "", current: "", area: "" });
 
@@ -114,14 +124,12 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
             const isLastPage = index === pages.length - 1;
 
             if (showJfb && isLastPage) {
-                // Räkna tomma rader i slutet av högerkolumnen
                 let emptyCount = 0;
                 for (let i = right.length - 1; i >= 0; i--) {
                     if (!right[i].label && !right[i].current) emptyCount++;
                     else break;
                 }
 
-                // Om vi har minst 10 tomma rader, ersätt dem med JFB
                 if (emptyCount >= 10) {
                     const keepCount = rowsPerCol - emptyCount;
                     right = right.slice(0, keepCount);
