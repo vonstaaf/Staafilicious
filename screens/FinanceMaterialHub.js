@@ -15,7 +15,7 @@ export default function FinanceMaterialHub({ navigation, route }) {
   const TILES = [
     {
       id: 'products',
-      title: 'PRODUKTER & MATERIAL',
+      title: 'MATERIAL',
       sub: 'Materiallista & Artiklar',
       icon: 'list-outline',
       color: '#007AFF',

@@ -9,7 +9,7 @@ import {
   onSnapshot,
   addDoc,
   updateDoc,
-  setDoc, // 🔑 Tillagd för att spara mallar
+  setDoc,
   doc,
   deleteDoc,
   getDocs,
@@ -17,7 +17,6 @@ import {
   serverTimestamp
 } from "firebase/firestore";
 
-// Import för notis-tjänsten
 import { sendPushNotification } from "../utils/pushService";
 
 export const ProjectsContext = createContext();
@@ -27,9 +26,11 @@ export const ProjectsProvider = ({ children }) => {
   const [selectedProject, setSelectedProjectState] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [companyData, setCompanyData] = useState(null); // 🔑 Ny state för företagsdata (loggan)
+  const [companyData, setCompanyData] = useState(null);
+  
+  // 🔑 NYTT: Hela materialregistret sparas här för blixtsnabb sökning
+  const [allProducts, setAllProducts] = useState([]);
 
-  // HJÄLPFUNKTION: GENERERA ALFANUMERISK KOD
   const generateProjectCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let result = "";
@@ -39,7 +40,6 @@ export const ProjectsProvider = ({ children }) => {
     return result;
   };
 
-  // HJÄLPFUNKTION: NOTIFIERA KOLLEGOR
   const notifyCollaborators = async (projectId, title, body) => {
     try {
       const projectRef = doc(db, "groups", projectId);
@@ -72,31 +72,36 @@ export const ProjectsProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    let unsubscribeSnapshot = null;
+    let unsubscribeProducts = null; // 🔑 Lyssnare för materialregistret
+
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user || null);
       if (!user) {
         setProjects([]);
         setSelectedProjectState(null);
         setCompanyData(null);
+        setAllProducts([]); // Rensa material vid utloggning
         setLoading(false);
+        if (unsubscribeSnapshot) unsubscribeSnapshot();
+        if (unsubscribeProducts) unsubscribeProducts();
         return;
       }
 
-      // 🔑 1. Hämta företagsdata (för loggan i PDF:er)
+      // 1. Hämta företagsdata
       const userRef = doc(db, "users", user.uid);
       getDoc(userRef).then((snap) => {
          if(snap.exists()) {
            setCompanyData(snap.data());
-           // Spara loggan lokalt för säkerhets skull
            if(snap.data().logoUrl) {
-              AsyncStorage.setItem('@company_logo', snap.data().logoUrl);
+             AsyncStorage.setItem('@company_logo', snap.data().logoUrl);
            }
          }
       });
 
       // 2. Lyssna på projekt
       const q = query(collection(db, "groups"), where("members", "array-contains", user.uid));
-      const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+      unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
         const projectsData = snapshot.docs.map((d) => ({
           id: d.id,
           ...d.data(),
@@ -105,18 +110,14 @@ export const ProjectsProvider = ({ children }) => {
           products: d.data().products || []
         }));
         
-        // Sortering
         const sorted = projectsData.sort((a, b) => {
-            // Aktiva först, arkiverade sist
             if (a.status === 'archived' && b.status !== 'archived') return 1;
             if (a.status !== 'archived' && b.status === 'archived') return -1;
-            // Sen bokstavsordning på namn
             return (a.name || "").localeCompare(b.name || "");
         });
 
         setProjects(sorted);
         
-        // Uppdatera valt projekt om det ändrats i bakgrunden
         setSelectedProjectState((prev) => {
           if (!prev) return null;
           const updated = projectsData.find((p) => p.id === prev.id);
@@ -124,9 +125,27 @@ export const ProjectsProvider = ({ children }) => {
         });
         setLoading(false);
       });
-      return () => unsubscribeSnapshot();
+
+      // 🔑 3. NYTT: Lyssna på det globala materialregistret (bakgrundssynk)
+      // Vi antar att din samling för allt material heter "products"
+      const productsQuery = query(collection(db, "products"));
+      unsubscribeProducts = onSnapshot(productsQuery, (snap) => {
+        const pData = snap.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        }));
+        setAllProducts(pData);
+        console.log(`✅ Synkade ${pData.length} artiklar till minnet.`);
+      }, (err) => {
+        console.error("Fel vid materialsynk:", err);
+      });
     });
-    return () => unsubscribeAuth();
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeSnapshot) unsubscribeSnapshot();
+      if (unsubscribeProducts) unsubscribeProducts();
+    };
   }, []);
 
   const cleanProjectName = (name = "") => {
@@ -144,41 +163,31 @@ export const ProjectsProvider = ({ children }) => {
     }
   };
 
-  // --- NY FUNKTION: SPARA MALL FÖR EGENKONTROLL ---
-  // Denna anropas från InspectionScreen för att spara nuvarande lista som global mall
   const saveInspectionTemplate = async (items) => {
     if (!currentUser) return;
     try {
-      // Vi sparar mallen under användarens profil i en sub-collection 'settings'
       const templateRef = doc(db, "users", currentUser.uid, "settings", "inspectionTemplate");
       await setDoc(templateRef, { items: items, updatedAt: serverTimestamp() });
-      console.log("✅ Mall för egenkontroll sparad!");
     } catch (error) {
       console.error("Kunde inte spara mall:", error);
       throw error;
     }
   };
 
-  // UPPDATERAD: Skapar projekt OCH hämtar mallen
   const createProject = async (name, code) => {
     if (!auth.currentUser) throw new Error("Ingen användare");
     
     const formattedName = cleanProjectName(name);
-    // Om kod skickas med används den, annars genereras en ny
     const codeToUse = code ? code.toString().toUpperCase().trim() : generateProjectCode();
     
-    // 1. Försök hämta användarens sparade mall (kategorier/punkter)
     let templateToUse = [];
     try {
-      // Vi kollar på den nya platsen för mallar
       const templateRef = doc(db, "users", auth.currentUser.uid, "settings", "inspectionTemplate");
       const templateSnap = await getDoc(templateRef);
       
       if (templateSnap.exists()) {
         templateToUse = templateSnap.data().items || [];
-        console.log("📥 Hämtade sparad mall för egenkontroll.");
       } else {
-         // Fallback: Kolla om det fanns en gammal mall på user-dokumentet (bakåtkompatibilitet)
          const userRef = doc(db, "users", auth.currentUser.uid);
          const userSnap = await getDoc(userRef);
          if (userSnap.exists() && userSnap.data().defaultInspectionTemplate) {
@@ -189,7 +198,6 @@ export const ProjectsProvider = ({ children }) => {
       console.log("Kunde inte hämta standardmall:", err);
     }
 
-    // 2. Skapa projektdata med mallen inkluderad i 'inspectionItems'
     const newProjectData = {
       name: formattedName,
       code: codeToUse,
@@ -198,14 +206,12 @@ export const ProjectsProvider = ({ children }) => {
       status: "active",
       kostnader: [],
       products: [],
-      inspectionItems: templateToUse, // 🔑 Här laddas din sparade mall in direkt!
-      createdAt: new Date().toISOString() // Använder ISO string för enklare sortering i appen
+      inspectionItems: templateToUse,
+      createdAt: new Date().toISOString()
     };
     
     const docRef = await addDoc(collection(db, "groups"), newProjectData);
     const createdProject = { id: docRef.id, ...newProjectData };
-    
-    // Sätt det nya projektet som valt direkt
     await setSelectedProject(createdProject);
 
     return createdProject;
@@ -237,7 +243,6 @@ export const ProjectsProvider = ({ children }) => {
     const ref = doc(db, "groups", projectId);
     await updateDoc(ref, finalUpdates);
     
-    // Uppdatera lokalt state direkt om det är valt projekt
     if (selectedProject && selectedProject.id === projectId) {
         setSelectedProjectState(prev => ({ ...prev, ...finalUpdates }));
     }
@@ -266,15 +271,16 @@ export const ProjectsProvider = ({ children }) => {
         selectedProject,
         setSelectedProject,
         createProject,
-        addProject: createProject, // Alias för kompatibilitet
+        addProject: createProject,
         importProject,
         updateProject,
         deleteProject,
         archiveProject,
         restoreProject,
         loading,
-        companyData, // 🔑 Exponerar företagsdata (logga)
-        saveInspectionTemplate // 🔑 Ny funktion
+        companyData,
+        saveInspectionTemplate,
+        allProducts // 🔑 Exponerar materialregistret till alla skärmar
       }}
     >
       {children}

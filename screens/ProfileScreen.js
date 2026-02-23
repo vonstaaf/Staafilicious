@@ -129,7 +129,7 @@ export default function ProfileScreen({ navigation }) {
           // 🔑 FIX: Stavfel "dingTop" rättat till "paddingTop" och ökad bottenmarginal
           contentContainerStyle={{ 
             padding: 20, 
-            paddingTop: insets.top + 10, 
+            paddingTop: insets.top - 15, 
             paddingBottom: insets.bottom + 130 
           }}
           showsVerticalScrollIndicator={false}

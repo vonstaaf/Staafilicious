@@ -64,7 +64,7 @@ export default function HomeScreen({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       
       {/* HEADER */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+      <View style={[styles.header, { paddingTop: insets.top - 15 }]}>
         <View>
           <Text style={styles.brandText}>WORKAHOLIC <Text style={{color: WorkaholicTheme.colors.primary}}>PRO</Text></Text>
           <Text style={styles.dateText}>{new Date().toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}</Text>

@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect, useRef } from "react";
+import React, { useContext, useState, useEffect, useRef, useCallback, ReactMemo } from "react";
 import {
   View,
   Text,
@@ -25,36 +25,103 @@ import * as ImagePicker from 'expo-image-picker';
 import AppHeader from "../components/AppHeader";
 import { auth, db } from "../firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
-
 import { handleInspectionPdf } from "../utils/pdfActions";
-
-const DEFAULT_ITEMS = [];
 
 const capitalizeFirst = (text) => {
   if (!text) return "";
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
+// 🔑 NY INTERN KOMPONENT: STORY ITEM (Fixar fokus-bugg i kontroll-läget)
+const InspectionStoryItem = React.memo(({ 
+  item, checks, setStatus, rowComments, setRowComments, images, takePhoto, persistData 
+}) => {
+  return (
+    <ScrollView contentContainerStyle={styles.storyContent} keyboardShouldPersistTaps="handled">
+      <View style={styles.storyCard}>
+        <Text style={styles.storySection}>{item.section}</Text>
+        <Text style={styles.storyLabel}>{item.label}</Text>
+        
+        {item.desc ? (
+          <View style={styles.descBox}>
+            <Ionicons name="information-circle-outline" size={18} color={WorkaholicTheme.colors.primary} />
+            <Text style={styles.storyDesc}>{item.desc}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.storyActions}>
+          <TouchableOpacity 
+            style={[styles.storyBtn, checks[item.id] === 'checked' && styles.storyBtnOk]} 
+            onPress={() => setStatus(item.id, 'checked')}
+          >
+             <Ionicons name="checkmark-circle" size={30} color={checks[item.id] === 'checked' ? "#FFF" : "#DDD"} />
+             <Text style={[styles.storyBtnText, checks[item.id] === 'checked' && {color:"#FFF"}]}>OK</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.storyBtn, checks[item.id] === 'na' && styles.storyBtnNa]} 
+            onPress={() => setStatus(item.id, 'na')}
+          >
+             <Ionicons name="remove-circle" size={30} color={checks[item.id] === 'na' ? "#FFF" : "#DDD"} />
+             <Text style={[styles.storyBtnText, checks[item.id] === 'na' && {color:"#FFF"}]}>N/A</Text>
+          </TouchableOpacity>
+
+           <TouchableOpacity 
+            style={[styles.storyBtn, checks[item.id] === 'fail' && styles.storyBtnFail]} 
+            onPress={() => setStatus(item.id, 'fail')}
+          >
+             <Ionicons name="alert-circle" size={30} color={checks[item.id] === 'fail' ? "#FFF" : "#DDD"} />
+             <Text style={[styles.storyBtnText, checks[item.id] === 'fail' && {color:"#FFF"}]}>FEL</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TextInput 
+          style={styles.storyComment} 
+          placeholder="Mätvärden eller noteringar..." 
+          multiline
+          value={rowComments[item.id] || ""}
+          onChangeText={t => setRowComments({ ...rowComments, [item.id]: t })}
+          onBlur={() => persistData({ inspectionRowComments: rowComments })}
+          placeholderTextColor="#BBB"
+        />
+      </View>
+
+      <View style={styles.miniGallery}>
+        {images.map((uri, idx) => (
+          <TouchableOpacity key={idx} onPress={() => { 
+            const n = images.filter((_, i) => i !== idx); 
+            persistData({ images: n }); 
+          }}>
+            <Image source={{ uri }} style={styles.miniThumb} />
+            <View style={styles.miniRemove}><Ionicons name="close" size={10} color="#fff" /></View>
+          </TouchableOpacity>
+        ))}
+        <TouchableOpacity style={styles.miniAdd} onPress={takePhoto}>
+            <Ionicons name="camera" size={24} color="#CCC" />
+            <Text style={{fontSize: 9, color: '#AAA', fontWeight: '900', marginTop: 2}}>FOTO</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+});
+
 export default function InspectionScreen({ route, navigation }) {
-  const { selectedProject, updateProject, saveInspectionTemplate } = useContext(ProjectsContext);
+  const { selectedProject, updateProject } = useContext(ProjectsContext);
   const signatureRef = useRef();
   const isSavingRef = useRef(false);
   const insets = useSafeAreaInsets();
 
   const project = route.params?.project || selectedProject;
 
-  // States
-  const [items, setItems] = useState(DEFAULT_ITEMS);
+  const [items, setItems] = useState([]);
   const [checks, setChecks] = useState({}); 
   const [rowComments, setRowComments] = useState({});
   const [generalNotes, setGeneralNotes] = useState("");
   const [nameClarification, setNameClarification] = useState("");
   const [images, setImages] = useState([]);
   
-  // UI States
   const [editMode, setEditMode] = useState(false); 
   const [currentIndex, setCurrentIndex] = useState(0); 
-  
   const [isSignModalVisible, setIsSignModalVisible] = useState(false);
   const [isNameEntryModalVisible, setIsNameEntryModalVisible] = useState(false);
   const [inspectionSubtitle, setInspectionSubtitle] = useState("");
@@ -62,7 +129,6 @@ export default function InspectionScreen({ route, navigation }) {
   const [editingHistoryId, setEditingHistoryId] = useState(null);
   const [companyData, setCompanyData] = useState(null);
 
-  // Hämta företag live
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -72,16 +138,11 @@ export default function InspectionScreen({ route, navigation }) {
     return () => unsubscribe();
   }, []);
 
-  // Ladda data
   useEffect(() => {
     if (route.params?.customTemplate) {
         setItems(route.params.customTemplate);
         setInspectionSubtitle(route.params.customTitle || ""); 
-        setChecks({});
-        setRowComments({});
-        setGeneralNotes("");
-        setImages([]);
-        setCurrentIndex(0);
+        setChecks({}); setRowComments({}); setGeneralNotes(""); setImages([]); setCurrentIndex(0);
     } 
     else if (route.params?.editMode && route.params?.existingData) {
       const data = route.params.existingData;
@@ -96,7 +157,7 @@ export default function InspectionScreen({ route, navigation }) {
       setCurrentIndex(0);
     } 
     else if (project) {
-      setItems(project.inspectionTemplate || DEFAULT_ITEMS);
+      setItems(project.inspectionItems || []);
       setChecks(project.currentInspections || {});
       setRowComments(project.currentInspectionRowComments || {});
       setGeneralNotes(project.currentInspectionNotes || "");
@@ -105,10 +166,8 @@ export default function InspectionScreen({ route, navigation }) {
     }
   }, [project, route.params]);
 
-  // Autosave
-  const persistData = async (updatedFields = {}) => {
-    if (route.params?.customTemplate) return;
-    if (!project?.id || isSavingRef.current || editingHistoryId || isProcessing) return;
+  const persistData = useCallback(async (updatedFields = {}) => {
+    if (route.params?.customTemplate || !project?.id || isSavingRef.current || editingHistoryId || isProcessing) return;
     
     isSavingRef.current = true;
     try {
@@ -116,7 +175,7 @@ export default function InspectionScreen({ route, navigation }) {
         currentInspections: updatedFields.inspections ?? checks,
         currentInspectionRowComments: updatedFields.inspectionRowComments ?? rowComments,
         currentInspectionNotes: updatedFields.inspectionNotes ?? generalNotes,
-        inspectionTemplate: updatedFields.inspectionTemplate ?? items,
+        inspectionItems: updatedFields.inspectionItems ?? items,
         nameClarification: updatedFields.nameClarification ?? nameClarification,
         currentImages: updatedFields.images ?? images,
         ...updatedFields,
@@ -126,15 +185,11 @@ export default function InspectionScreen({ route, navigation }) {
     } finally { 
       isSavingRef.current = false; 
     }
-  };
+  }, [project, checks, rowComments, generalNotes, items, nameClarification, images, isProcessing, editingHistoryId]);
 
   const takePhoto = async () => {
     if (images.length >= 6) { Alert.alert("Gräns nådd", "Max 6 bilder."); return; }
-    let r = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.3,
-      allowsEditing: false,
-    });
+    let r = await ImagePicker.launchCameraAsync({ quality: 0.3 });
     if (!r.canceled) {
         const n = [...images, r.assets[0].uri];
         setImages(n);
@@ -142,7 +197,6 @@ export default function InspectionScreen({ route, navigation }) {
     }
   }
 
-  // Story mode
   const currentItem = items[currentIndex];
   const isLastStep = currentIndex === items.length - 1;
   const progress = items.length > 0 ? (currentIndex + 1) / items.length : 0;
@@ -158,8 +212,9 @@ export default function InspectionScreen({ route, navigation }) {
 
   const setStatus = (id, s) => { 
     const n = checks[id] === s ? null : s; 
-    setChecks({...checks, [id]: n}); 
-    persistData({ inspections: {...checks, [id]: n} }); 
+    const newChecks = {...checks, [id]: n};
+    setChecks(newChecks); 
+    persistData({ inspections: newChecks }); 
     
     if (!editMode && (s === 'checked' || s === 'na') && !isLastStep) {
         setTimeout(() => setCurrentIndex(prev => prev + 1), 250);
@@ -179,13 +234,8 @@ export default function InspectionScreen({ route, navigation }) {
           id: editingHistoryId || Date.now(),
           date: editingHistoryId ? route.params.existingData.date : new Date().toISOString(),
           description: inspectionSubtitle || capitalizeFirst(project.name),
-          checks, 
-          rowComments, 
-          notes: generalNotes, 
-          images, 
-          signature: fullSig,
-          signedBy: nameClarification || "Installatör", 
-          items 
+          checks, rowComments, notes: generalNotes, images, signature: fullSig,
+          signedBy: nameClarification || "Installatör", items 
         };
         
         let updatedHistory = editingHistoryId 
@@ -195,11 +245,7 @@ export default function InspectionScreen({ route, navigation }) {
         await updateProject(project.id, {
           inspectionHistory: updatedHistory,
           ...(editingHistoryId || route.params?.customTemplate ? {} : { 
-              currentInspections: {}, 
-              currentInspectionRowComments: {}, 
-              currentInspectionNotes: "", 
-              currentImages: [], 
-              nameClarification: "" 
+              currentInspections: {}, currentInspectionRowComments: {}, currentInspectionNotes: "", currentImages: [], nameClarification: "" 
           })
         });
 
@@ -207,55 +253,31 @@ export default function InspectionScreen({ route, navigation }) {
         navigation.goBack();
         
         setTimeout(() => { 
-              Alert.alert(
-                  "Sparat!", 
-                  "Egenkontrollen har arkiverats. Vill du skapa PDF nu?", 
-                  [
-                      { text: "Nej", style: "cancel" },
-                      { text: "Ja", onPress: () => onGeneratePdf(entryData) }
-                  ]
-              ); 
+            Alert.alert("Sparat!", "Egenkontrollen har arkiverats. Vill du skapa PDF nu?", [
+                { text: "Nej", style: "cancel" },
+                { text: "Ja", onPress: () => handleInspectionPdf(project, entryData, companyData) }
+            ]); 
         }, 500);
       } catch (e) { Alert.alert("Fel", "Kunde inte spara."); }
       finally { setIsProcessing(false); }
     }, 400);
   };
 
-  const onGeneratePdf = async (historyData) => {
-    setIsProcessing(true);
-    try {
-      await handleInspectionPdf(project, historyData, companyData);
-    } catch (e) {
-      Alert.alert("Fel", "PDF:en kunde inte skapas.");
-    } finally {
-      setIsProcessing(false); 
-    }
-  };
-
-  // Mall-funktioner
   const addNewSection = () => { 
     const n = [...items, {id: "s"+Date.now(), label: "Ny punkt", section: "Ny Kategori", desc: ""}]; 
-    setItems(n); persistData({inspectionTemplate: n}); 
+    setItems(n); persistData({inspectionItems: n}); 
   };
   const removeSection = (sec) => { 
-    const n = items.filter(i => i.section !== sec); setItems(n); persistData({inspectionTemplate: n}); 
+    const n = items.filter(i => i.section !== sec); setItems(n); persistData({inspectionItems: n}); 
   };
   const addNewItem = (sec) => { 
-    const n = [...items, {id: "i"+Date.now(), label: "Ny punkt", section: sec, desc: ""}]; setItems(n); persistData({inspectionTemplate: n}); 
+    const n = [...items, {id: "i"+Date.now(), label: "Ny punkt", section: sec, desc: ""}]; setItems(n); persistData({inspectionItems: n}); 
   };
   const removeItem = (id) => { 
-    const n = items.filter(i => i.id !== id); setItems(n); persistData({inspectionTemplate: n}); 
+    const n = items.filter(i => i.id !== id); setItems(n); persistData({inspectionItems: n}); 
   };
-  const markSectionAsNA = (sec) => { 
-    const c = {...checks}; 
-    items.filter(i => i.section === sec).forEach(i => c[i.id] = 'na'); 
-    setChecks(c); persistData({inspections: c}); 
-  };
-  const openSignature = async () => { setIsNameEntryModalVisible(false); await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT); setIsSignModalVisible(true); };
-  const closeSignature = async () => { await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP); setIsSignModalVisible(false); };
 
   if (!project) return null;
-  
   const sections = Array.from(new Set(items.map(i => i.section)));
 
   return (
@@ -280,78 +302,24 @@ export default function InspectionScreen({ route, navigation }) {
                 
                 <TouchableOpacity onPress={() => setEditMode(!editMode)} style={[styles.modeToggle, editMode && styles.modeToggleActive]}>
                     <Ionicons name={editMode ? "checkmark-circle" : "settings-outline"} size={16} color={editMode ? "#FFF" : WorkaholicTheme.colors.primary} />
-                    <Text style={[styles.modeText, editMode && {color: "#FFF"}]}>
-                        {editMode ? "KLAR" : "MALL"}
-                    </Text>
+                    <Text style={[styles.modeText, editMode && {color: "#FFF"}]}>{editMode ? "KLAR" : "MALL"}</Text>
                 </TouchableOpacity>
           </View>
 
           {!editMode && currentItem ? (
-             <ScrollView contentContainerStyle={styles.storyContent}>
-                <View style={styles.storyCard}>
-                    <Text style={styles.storySection}>{currentItem.section}</Text>
-                    <Text style={styles.storyLabel}>{currentItem.label}</Text>
-                    
-                    {currentItem.desc ? (
-                        <View style={styles.descBox}>
-                            <Ionicons name="information-circle-outline" size={18} color={WorkaholicTheme.colors.primary} />
-                            <Text style={styles.storyDesc}>{currentItem.desc}</Text>
-                        </View>
-                    ) : null}
-
-                    <View style={styles.storyActions}>
-                        <TouchableOpacity 
-                            style={[styles.storyBtn, checks[currentItem.id] === 'checked' && styles.storyBtnOk]} 
-                            onPress={() => setStatus(currentItem.id, 'checked')}
-                        >
-                             <Ionicons name="checkmark-circle" size={30} color={checks[currentItem.id] === 'checked' ? "#FFF" : "#DDD"} />
-                             <Text style={[styles.storyBtnText, checks[currentItem.id] === 'checked' && {color:"#FFF"}]}>OK</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity 
-                            style={[styles.storyBtn, checks[currentItem.id] === 'na' && styles.storyBtnNa]} 
-                            onPress={() => setStatus(currentItem.id, 'na')}
-                        >
-                             <Ionicons name="remove-circle" size={30} color={checks[currentItem.id] === 'na' ? "#FFF" : "#DDD"} />
-                             <Text style={[styles.storyBtnText, checks[currentItem.id] === 'na' && {color:"#FFF"}]}>N/A</Text>
-                        </TouchableOpacity>
-
-                         <TouchableOpacity 
-                            style={[styles.storyBtn, checks[currentItem.id] === 'fail' && styles.storyBtnFail]} 
-                            onPress={() => setStatus(currentItem.id, 'fail')}
-                        >
-                             <Ionicons name="alert-circle" size={30} color={checks[currentItem.id] === 'fail' ? "#FFF" : "#DDD"} />
-                             <Text style={[styles.storyBtnText, checks[currentItem.id] === 'fail' && {color:"#FFF"}]}>FEL</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <TextInput 
-                        style={styles.storyComment} 
-                        placeholder="Mätvärden eller noteringar..." 
-                        multiline
-                        value={rowComments[currentItem.id] || ""}
-                        onChangeText={t => setRowComments({ ...rowComments, [currentItem.id]: t })}
-                        onBlur={() => persistData({ inspectionRowComments: rowComments })}
-                        placeholderTextColor="#BBB"
-                    />
-                </View>
-
-                <View style={styles.miniGallery}>
-                    {images.map((uri, idx) => (
-                      <TouchableOpacity key={idx} onPress={() => { const n = images.filter((_, i) => i !== idx); setImages(n); persistData({ images: n }); }}>
-                        <Image source={{ uri }} style={styles.miniThumb} />
-                        <View style={styles.miniRemove}><Ionicons name="close" size={10} color="#fff" /></View>
-                      </TouchableOpacity>
-                    ))}
-                    <TouchableOpacity style={styles.miniAdd} onPress={takePhoto}>
-                        <Ionicons name="camera" size={24} color="#CCC" />
-                        <Text style={{fontSize: 9, color: '#AAA', fontWeight: '900', marginTop: 2}}>FOTO</Text>
-                    </TouchableOpacity>
-                </View>
-             </ScrollView>
+              <InspectionStoryItem 
+                item={currentItem}
+                checks={checks}
+                setStatus={setStatus}
+                rowComments={rowComments}
+                setRowComments={setRowComments}
+                images={images}
+                takePhoto={takePhoto}
+                persistData={persistData}
+              />
           ) : (
           
-          <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
+          <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 100 }} keyboardShouldPersistTaps="handled">
             {editMode && (
               <View style={styles.adminBanner}>
                 <TouchableOpacity style={styles.addSectionBtn} onPress={addNewSection}>
@@ -370,20 +338,11 @@ export default function InspectionScreen({ route, navigation }) {
                         style={styles.sectionEditInput} 
                         value={secName} 
                         onChangeText={(txt) => setItems(items.map(it => it.section === secName ? { ...it, section: txt } : it))} 
-                        onBlur={() => persistData({ inspectionTemplate: items })} 
+                        onBlur={() => persistData({ inspectionItems: items })} 
                       />
-                      <TouchableOpacity onPress={() => removeSection(secName)} style={styles.removeSectionBtn}>
-                        <Ionicons name="trash" size={18} color="#FF3B30" />
-                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => removeSection(secName)} style={styles.removeSectionBtn}><Ionicons name="trash" size={18} color="#FF3B30" /></TouchableOpacity>
                     </View>
-                  ) : (
-                    <>
-                      <Text style={styles.sectionHeader}>{secName.toUpperCase()}</Text>
-                      <TouchableOpacity onPress={() => markSectionAsNA(secName)} style={styles.naAllBtn}>
-                        <Text style={styles.naAllText}>Markera alla N/A </Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
+                  ) : <Text style={styles.sectionHeader}>{secName.toUpperCase()}</Text>}
                 </View>
 
                 {items.filter(it => it.section === secName).map((item) => (
@@ -394,40 +353,33 @@ export default function InspectionScreen({ route, navigation }) {
                           <View>
                             <TextInput 
                               style={styles.editInput} 
-                              placeholder="Rubrik..."
                               value={item.label} 
                               onChangeText={(txt) => setItems(items.map(it => it.id === item.id ? { ...it, label: txt } : it))} 
+                              onBlur={() => persistData({ inspectionItems: items })}
                             />
                             <TextInput 
                               style={[styles.editInput, {fontSize: 12, color: '#666', borderBottomWidth: 0}]} 
-                              placeholder="Beskrivning..."
                               value={item.desc} 
                               onChangeText={(txt) => setItems(items.map(it => it.id === item.id ? { ...it, desc: txt } : it))} 
+                              onBlur={() => persistData({ inspectionItems: items })}
                             />
                           </View>
                         ) : <Text style={styles.checkText}>{item.label}</Text>}
                       </View>
                       {!editMode ? (
                         <View style={styles.choiceContainer}>
-                          <TouchableOpacity onPress={() => setStatus(item.id, 'na')} style={[styles.choiceBtn, checks[item.id] === 'na' && styles.choiceNA]}>
-                            <Ionicons name="close" size={18} color={checks[item.id] === 'na' ? "#fff" : "#DDD"} />
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => setStatus(item.id, 'checked')} style={[styles.choiceBtn, checks[item.id] === 'checked' && styles.choiceOK]}>
-                            <Ionicons name="checkmark" size={18} color={checks[item.id] === 'checked' ? "#fff" : "#DDD"} />
-                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => setStatus(item.id, 'na')} style={[styles.choiceBtn, checks[item.id] === 'na' && styles.choiceNA]}><Ionicons name="close" size={18} color={checks[item.id] === 'na' ? "#fff" : "#DDD"} /></TouchableOpacity>
+                          <TouchableOpacity onPress={() => setStatus(item.id, 'checked')} style={[styles.choiceBtn, checks[item.id] === 'checked' && styles.choiceOK]}><Ionicons name="checkmark" size={18} color={checks[item.id] === 'checked' ? "#fff" : "#DDD"} /></TouchableOpacity>
                         </View>
                       ) : (
-                        <TouchableOpacity onPress={() => removeItem(item.id)} style={{padding: 5}}>
-                            <Ionicons name="trash-outline" size={20} color="#FF3B30" />
-                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => removeItem(item.id)} style={{padding: 5}}><Ionicons name="trash-outline" size={20} color="#FF3B30" /></TouchableOpacity>
                       )}
                     </View>
                   </View>
                 ))}
                 {editMode && (
                   <TouchableOpacity style={styles.addItemBtn} onPress={() => addNewItem(secName)}>
-                    <Ionicons name="add" size={18} color="#FFB300" />
-                    <Text style={styles.addItemText}>Lägg till punkt</Text>
+                    <Ionicons name="add" size={18} color="#FFB300" /><Text style={styles.addItemText}>Lägg till punkt</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -436,31 +388,22 @@ export default function InspectionScreen({ route, navigation }) {
             <View style={styles.notesContainer}>
               <Text style={styles.notesTitle}>ÖVRIGA ANTECKNINGAR</Text>
               <TextInput 
-                style={styles.noteInput} 
-                multiline 
-                placeholder="Allmänna kommentarer..." 
-                value={generalNotes} 
-                onChangeText={setGeneralNotes} 
-                onBlur={() => persistData({ inspectionNotes: generalNotes })} 
-                placeholderTextColor="#BBB"
+                style={styles.noteInput} multiline value={generalNotes} onChangeText={setGeneralNotes} 
+                onBlur={() => persistData({ inspectionNotes: generalNotes })} placeholderTextColor="#BBB"
               />
             </View>
           </ScrollView>
           )}
 
-          {/* STICKY FOOTER */}
           {!editMode && (
              <View style={[styles.stickyFooter, { paddingBottom: insets.bottom + 15 }]}>
                 {currentItem ? (
                     <View style={styles.navRow}>
                         <TouchableOpacity onPress={handlePrev} disabled={currentIndex === 0} style={[styles.navBtn, currentIndex === 0 && {opacity: 0.3}]}>
-                            <Ionicons name="arrow-back" size={20} color="#1C1C1E" />
-                            <Text style={styles.navText}>BAKÅT</Text>
+                            <Ionicons name="arrow-back" size={20} color="#1C1C1E" /><Text style={styles.navText}>BAKÅT</Text>
                         </TouchableOpacity>
-
                         <TouchableOpacity onPress={handleNext} style={[styles.navBtn, {backgroundColor: WorkaholicTheme.colors.primary}]}>
-                            <Text style={[styles.navText, {color: '#FFF'}]}>{isLastStep ? "SLUTFÖR" : "NÄSTA"}</Text>
-                            <Ionicons name={isLastStep ? "checkmark" : "arrow-forward"} size={20} color="#FFF" />
+                            <Text style={[styles.navText, {color: '#FFF'}]}>{isLastStep ? "SLUTFÖR" : "NÄSTA"}</Text><Ionicons name={isLastStep ? "checkmark" : "arrow-forward"} size={20} color="#FFF" />
                         </TouchableOpacity>
                     </View>
                 ) : (
@@ -472,16 +415,15 @@ export default function InspectionScreen({ route, navigation }) {
           )}
         </KeyboardAvoidingView>
 
-        {/* MODALER (NAMN & SIGNATUR) */}
         <Modal visible={isNameEntryModalVisible} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={styles.namingCard}>
               <Text style={styles.namingTitle}>Slutför Protokoll</Text>
-              <TextInput style={styles.namingInput} value={inspectionSubtitle} onChangeText={setInspectionSubtitle} placeholder="Protokollets namn (t.ex. Slutkontroll)" autoFocus placeholderTextColor="#BBB" />
-              <TextInput style={[styles.namingInput, {marginTop: 15}]} value={nameClarification} onChangeText={setNameClarification} placeholder="Ditt namn (Namnförtydligande)" placeholderTextColor="#BBB" />
+              <TextInput style={styles.namingInput} value={inspectionSubtitle} onChangeText={setInspectionSubtitle} placeholder="Protokollets namn" autoFocus placeholderTextColor="#BBB" />
+              <TextInput style={[styles.namingInput, {marginTop: 15}]} value={nameClarification} onChangeText={setNameClarification} placeholder="Ditt namn" placeholderTextColor="#BBB" />
               <View style={styles.namingActions}>
                 <TouchableOpacity style={styles.namingCancel} onPress={() => setIsNameEntryModalVisible(false)}><Text style={styles.namingCancelText}>Tillbaka</Text></TouchableOpacity>
-                <TouchableOpacity style={styles.namingConfirm} onPress={openSignature}><Text style={styles.namingConfirmText}>Gå till signering</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.namingConfirm} onPress={async () => { setIsNameEntryModalVisible(false); await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT); setIsSignModalVisible(true); }}><Text style={styles.namingConfirmText}>Gå till signering</Text></TouchableOpacity>
               </View>
             </View>
           </View>
@@ -491,13 +433,11 @@ export default function InspectionScreen({ route, navigation }) {
           <View style={{ flex: 1, backgroundColor: '#fff' }}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Signera Kontroll</Text>
-              <TouchableOpacity onPress={closeSignature}><Ionicons name="close-circle" size={32} color="#1C1C1E" /></TouchableOpacity>
+              <TouchableOpacity onPress={async () => { await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP); setIsSignModalVisible(false); }}><Ionicons name="close-circle" size={32} color="#1C1C1E" /></TouchableOpacity>
             </View>
             <SignatureScreen ref={signatureRef} onOK={handleSignature} descriptionText="Signera här" autoClear={false} imageType="image/png" />
             <View style={{ padding: 20, paddingBottom: 40 }}>
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => signatureRef.current.readSignature()}>
-                <Text style={styles.btnText}>SLUTFÖR & ARKIVERA</Text>
-              </TouchableOpacity>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => signatureRef.current.readSignature()}><Text style={styles.btnText}>SLUTFÖR & ARKIVERA</Text></TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -510,12 +450,11 @@ const styles = StyleSheet.create({
   topBar: { paddingHorizontal: 20, paddingTop: 15, paddingBottom: 10, flexDirection: 'row', alignItems: 'center' },
   progressContainer: { flex: 1, height: 6, backgroundColor: '#EEE', borderRadius: 3, marginRight: 15, overflow: 'hidden' },
   progressBar: { height: '100%', backgroundColor: WorkaholicTheme.colors.primary },
-  modeToggle: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
+  modeToggle: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, elevation: 2 },
   modeToggleActive: { backgroundColor: WorkaholicTheme.colors.primary },
   modeText: { fontSize: 10, fontWeight: '900', marginLeft: 6, color: WorkaholicTheme.colors.primary, letterSpacing: 0.5 },
-
   storyContent: { padding: 20, flexGrow: 1, justifyContent: 'center' },
-  storyCard: { backgroundColor: '#FFF', borderRadius: 25, padding: 25, elevation: 4, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 15 },
+  storyCard: { backgroundColor: '#FFF', borderRadius: 25, padding: 25, elevation: 4 },
   storySection: { fontSize: 10, fontWeight: '900', color: '#BBB', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 1.2 },
   storyLabel: { fontSize: 22, fontWeight: '900', color: '#1C1C1E', marginBottom: 15 },
   descBox: { flexDirection: 'row', backgroundColor: '#F0F7FF', padding: 15, borderRadius: 15, marginBottom: 25, gap: 10 },
@@ -527,25 +466,20 @@ const styles = StyleSheet.create({
   storyBtnFail: { backgroundColor: '#FF3B30', borderColor: '#FF3B30' },
   storyBtnText: { fontSize: 10, fontWeight: '900', marginTop: 10, color: '#AAA' },
   storyComment: { backgroundColor: '#F5F5F7', padding: 18, borderRadius: 18, fontSize: 15, minHeight: 120, textAlignVertical: 'top', fontWeight: '600', color: '#333' },
-  
   navRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 15 },
   navBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 20, backgroundColor: '#FFF', elevation: 2, gap: 10, justifyContent: 'center' },
   navText: { fontWeight: '900', fontSize: 13, color: '#1C1C1E', letterSpacing: 0.5 },
-
   miniGallery: { flexDirection: 'row', marginTop: 30, gap: 12, flexWrap: 'wrap', justifyContent: 'center' },
   miniThumb: { width: 70, height: 70, borderRadius: 15 },
   miniAdd: { width: 70, height: 70, borderRadius: 15, borderWidth: 1, borderColor: '#EEE', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF' },
   miniRemove: { position: 'absolute', top: -5, right: -5, backgroundColor: '#FF3B30', width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFF' },
-
   adminBanner: { backgroundColor: '#FFFDF0', padding: 20, borderBottomWidth: 1, borderBottomColor: '#FFB300' },
   sectionContainer: { marginBottom: 25, paddingHorizontal: 20 },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   sectionHeader: { fontSize: 11, fontWeight: "900", color: "#BBB", letterSpacing: 1 },
   sectionEditInput: { flex: 1, backgroundColor: "#fff", padding: 12, borderRadius: 12, borderWidth: 1, borderColor: "#FFB300", fontWeight: '800' },
   removeSectionBtn: { marginLeft: 10, padding: 10 },
-  naAllBtn: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 10, backgroundColor: '#F0F0F2' },
-  naAllText: { fontSize: 10, color: '#8E8E93', fontWeight: '800' },
-  card: { backgroundColor: "#FFF", borderRadius: 20, padding: 18, marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
+  card: { backgroundColor: "#FFF", borderRadius: 20, padding: 18, marginBottom: 12, elevation: 2 },
   cardEdit: { borderColor: "#FFB300", backgroundColor: "#FFFDF0", borderWidth: 1 },
   checkRow: { flexDirection: "row", alignItems: "center" },
   checkText: { fontSize: 15, fontWeight: "800", color: '#1C1C1E' },
@@ -561,10 +495,8 @@ const styles = StyleSheet.create({
   notesContainer: { padding: 20 },
   notesTitle: { fontSize: 11, fontWeight: "900", color: "#BBB", marginBottom: 12, letterSpacing: 1 },
   noteInput: { backgroundColor: "#FFF", borderRadius: 20, padding: 20, height: 130, textAlignVertical: "top", borderWidth: 1, borderColor: '#EEE', fontSize: 14, fontWeight: '600' },
-  
   primaryBtn: { backgroundColor: WorkaholicTheme.colors.primary, padding: 18, borderRadius: 20, alignItems: "center", flexDirection: "row", justifyContent: "center", elevation: 3 },
   btnText: { color: "#fff", fontWeight: "900", fontSize: 15, letterSpacing: 0.5 },
-  
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 25 },
   namingCard: { backgroundColor: '#FFF', borderRadius: 30, padding: 30, elevation: 15 },
   namingTitle: { fontSize: 20, fontWeight: '900', marginBottom: 25, textAlign: 'center', color: '#1C1C1E' },

@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from "react";
+import React, { useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { 
   View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, 
   FlatList, KeyboardAvoidingView, Platform,
@@ -13,6 +13,171 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { handleGroupSchedulePdf } from "../utils/pdfActions";
 import AppHeader from "../components/AppHeader";
 
+// 🔑 NY INTERN KOMPONENT: HEADER-INFO (Fixar fokus-bugg i toppen)
+const ScheduleHeader = React.memo(({ 
+  headerInfo, setHeaderInfo, pageSize, setPageSize, 
+  resetSchedule, moduleCount, adjustRowsCount, 
+  showJfbText, setShowJfbText 
+}) => {
+  return (
+    <View style={styles.headerCard}>
+      <Text style={styles.sectionHeader}>ANLÄGGNINGSINFO</Text>
+      
+      <View style={styles.inputRow}>
+        <View style={styles.halfInput}>
+          <Text style={styles.label}>Anläggning</Text>
+          <TextInput 
+            style={styles.headerInput} 
+            value={headerInfo.anlaggning} 
+            onChangeText={v => setHeaderInfo({...headerInfo, anlaggning: v})} 
+          />
+        </View>
+        <View style={styles.halfInput}>
+          <Text style={styles.label}>Central</Text>
+          <TextInput 
+            style={styles.headerInput} 
+            value={headerInfo.central} 
+            onChangeText={v => setHeaderInfo({...headerInfo, central: v})} 
+          />
+        </View>
+      </View>
+
+      <View style={styles.inputRow}>
+        <View style={styles.halfInput}>
+          <Text style={styles.label}>Säkring (A)</Text>
+          <TextInput 
+            style={styles.headerInput} 
+            value={headerInfo.skring} 
+            onChangeText={v => setHeaderInfo({...headerInfo, skring: v})} 
+          />
+        </View>
+        <View style={styles.halfInput}>
+          <Text style={styles.label}>Matning</Text>
+          <TextInput 
+            style={styles.headerInput} 
+            value={headerInfo.kabel} 
+            onChangeText={v => setHeaderInfo({...headerInfo, kabel: v})} 
+          />
+        </View>
+      </View>
+
+      <View style={styles.inputRow}>
+        <View style={styles.halfInput}>
+          <Text style={styles.label}>Ik3 (kA)</Text>
+          <TextInput 
+            style={styles.headerInput} 
+            value={headerInfo.ik3} 
+            placeholder="t.ex. 6" 
+            placeholderTextColor="#CCC" 
+            onChangeText={v => setHeaderInfo({...headerInfo, ik3: v})} 
+          />
+        </View>
+        <View style={styles.halfInput}>
+          <Text style={styles.label}>Zför (Ω)</Text>
+          <TextInput 
+            style={styles.headerInput} 
+            value={headerInfo.zfor} 
+            placeholder="t.ex. 0.45" 
+            placeholderTextColor="#CCC" 
+            onChangeText={v => setHeaderInfo({...headerInfo, zfor: v})} 
+          />
+        </View>
+      </View>
+
+      <View style={styles.separator} />
+
+      <View style={styles.formatRow}>
+        <TouchableOpacity 
+          style={[styles.formatBtn, pageSize === "A4" && styles.activeBtn]} 
+          onPress={() => setPageSize("A4")}
+        >
+          <Text style={[styles.btnText, pageSize === "A4" && {color: "#FFF"}]}>A4</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.formatBtn, pageSize === "A5" && styles.activeBtn]} 
+          onPress={() => setPageSize("A5")}
+        >
+          <Text style={[styles.btnText, pageSize === "A5" && {color: "#FFF"}]}>A5</Text>
+        </TouchableOpacity>
+        
+        <View style={{flex: 1}} />
+        
+        <TouchableOpacity onPress={resetSchedule} style={styles.resetBtn}>
+          <Ionicons name="trash-outline" size={18} color="#FF3B30" />
+        </TouchableOpacity>
+
+        <View style={{alignItems: 'center', marginLeft: 10}}>
+            <TextInput 
+              style={styles.modInput} 
+              keyboardType="number-pad" 
+              value={moduleCount} 
+              onChangeText={adjustRowsCount} 
+            />
+            <Text style={styles.modLabel}>RADER</Text>
+        </View>
+      </View>
+
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Visa text om Jordfelsbrytare på PDF</Text>
+        <Switch 
+          value={showJfbText}
+          onValueChange={setShowJfbText}
+          trackColor={{ false: "#EEE", true: WorkaholicTheme.colors.primary }}
+          thumbColor="#FFF"
+        />
+      </View>
+    </View>
+  );
+});
+
+// 🔑 NY INTERN KOMPONENT: RAD-KOMPONENT (Fixar fokus-bugg i listan)
+const ScheduleRow = React.memo(({ 
+  item, index, totalRows, handleLabelChange, copyLabelToNext, 
+  openPicker, copyValuesToNext 
+}) => {
+  return (
+    <View style={styles.rowCard}>
+      <View style={styles.numBadge}>
+        <Text style={styles.numText}>{item.id}</Text>
+      </View>
+      
+      <TextInput 
+        style={styles.input} 
+        placeholder="Beskrivning..." 
+        placeholderTextColor="#CCC"
+        value={item.label} 
+        onChangeText={(v) => handleLabelChange(v, item.id)} 
+      />
+      
+      {index < totalRows - 1 && (
+        <TouchableOpacity style={styles.copyBtn} onPress={() => copyLabelToNext(index)}>
+          <Ionicons name="arrow-down-circle-outline" size={20} color="#DDD" />
+        </TouchableOpacity>
+      )}
+
+      <View style={styles.pickerArea}>
+        <TouchableOpacity style={styles.pickerTrigger} onPress={() => openPicker(item.id, 'current')}>
+          <Text style={styles.pickerValue}>
+            {item.current ? (item.current === 'N' ? 'N' : `${item.current}A`) : 'Amp'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.pickerTrigger} onPress={() => openPicker(item.id, 'area')}>
+          <Text style={styles.pickerValue}>
+            {item.area ? `${item.area}mm²` : 'Area'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {index < totalRows - 1 && (
+        <TouchableOpacity style={styles.copyBtn} onPress={() => copyValuesToNext(index)}>
+          <Ionicons name="arrow-down-circle-outline" size={20} color={WorkaholicTheme.colors.primary + '40'} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+});
+
 export default function GroupScheduleScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { selectedProject, updateProject } = useContext(ProjectsContext);
@@ -20,14 +185,8 @@ export default function GroupScheduleScreen({ navigation }) {
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [companyData, setCompanyData] = useState(null);
   
-  // 🔑 BEVARAD LOGIK: Header-info med alla dina fält
   const [headerInfo, setHeaderInfo] = useState({ 
-    anlaggning: "", 
-    central: "", 
-    skring: "", 
-    kabel: "",
-    ik3: "", 
-    zfor: ""
+    anlaggning: "", central: "", skring: "", kabel: "", ik3: "", zfor: ""
   });
   const [showJfbText, setShowJfbText] = useState(false);
   const [pageSize, setPageSize] = useState("A4");
@@ -84,9 +243,7 @@ export default function GroupScheduleScreen({ navigation }) {
     }
   }, [selectedProject]);
 
-  // --- BEVARADE FUNKTIONER ---
-
-  const resetSchedule = () => {
+  const resetSchedule = useCallback(() => {
     Alert.alert("Rensa schema?", "Vill du tömma hela schemat?", [
       { text: "Avbryt", style: "cancel" },
       { text: "Ja, rensa", style: "destructive", onPress: () => {
@@ -94,9 +251,9 @@ export default function GroupScheduleScreen({ navigation }) {
           setRows(Array.from({ length: 12 }, (_, i) => ({ id: (i + 1).toString(), label: "", current: "", area: "" })));
       }}
     ]);
-  };
+  }, [rows]);
 
-  const adjustRowsCount = (newCountStr) => {
+  const adjustRowsCount = useCallback((newCountStr) => {
     const num = parseInt(newCountStr) || 0;
     setModuleCount(newCountStr);
     if (num === rows.length) return;
@@ -109,9 +266,12 @@ export default function GroupScheduleScreen({ navigation }) {
       }));
       setRows([...rows, ...newRows]);
     }
-  };
+  }, [rows]);
 
-  const openPicker = (rowId, type) => { setActivePicker({ rowId, type }); setPickerVisible(true); };
+  const openPicker = useCallback((rowId, type) => { 
+    setActivePicker({ rowId, type }); 
+    setPickerVisible(true); 
+  }, []);
   
   const selectValue = (value) => {
     const { rowId, type } = activePicker;
@@ -119,25 +279,25 @@ export default function GroupScheduleScreen({ navigation }) {
     setPickerVisible(false);
   };
 
-  const handleLabelChange = (text, id) => {
+  const handleLabelChange = useCallback((text, id) => {
     const formatted = text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
-    setRows(rows.map(r => r.id === id ? {...r, label: formatted} : r));
-  };
+    setRows(prevRows => prevRows.map(r => r.id === id ? {...r, label: formatted} : r));
+  }, []);
 
-  const copyLabelToNext = (index) => {
+  const copyLabelToNext = useCallback((index) => {
     if (index >= rows.length - 1) return;
     const newRows = [...rows];
     newRows[index + 1].label = newRows[index].label;
     setRows(newRows);
-  };
+  }, [rows]);
 
-  const copyValuesToNext = (index) => {
+  const copyValuesToNext = useCallback((index) => {
     if (index >= rows.length - 1) return;
     const newRows = [...rows];
     newRows[index + 1].current = newRows[index].current;
     newRows[index + 1].area = newRows[index].area;
     setRows(newRows);
-  };
+  }, [rows]);
 
   const saveSchedule = async (silent = false) => {
     try {
@@ -168,76 +328,7 @@ export default function GroupScheduleScreen({ navigation }) {
     finally { setLoadingPdf(false); }
   };
 
-  const renderHeaderInputs = () => (
-    <View style={styles.headerCard}>
-      <Text style={styles.sectionHeader}>ANLÄGGNINGSINFO</Text>
-      
-      <View style={styles.inputRow}>
-        <View style={styles.halfInput}>
-          <Text style={styles.label}>Anläggning</Text>
-          <TextInput style={styles.headerInput} value={headerInfo.anlaggning} onChangeText={v => setHeaderInfo({...headerInfo, anlaggning: v})} />
-        </View>
-        <View style={styles.halfInput}>
-          <Text style={styles.label}>Central</Text>
-          <TextInput style={styles.headerInput} value={headerInfo.central} onChangeText={v => setHeaderInfo({...headerInfo, central: v})} />
-        </View>
-      </View>
-
-      <View style={styles.inputRow}>
-        <View style={styles.halfInput}>
-          <Text style={styles.label}>Säkring (A)</Text>
-          <TextInput style={styles.headerInput} value={headerInfo.skring} onChangeText={v => setHeaderInfo({...headerInfo, skring: v})} />
-        </View>
-        <View style={styles.halfInput}>
-          <Text style={styles.label}>Matning</Text>
-          <TextInput style={styles.headerInput} value={headerInfo.kabel} onChangeText={v => setHeaderInfo({...headerInfo, kabel: v})} />
-        </View>
-      </View>
-
-      <View style={styles.inputRow}>
-        <View style={styles.halfInput}>
-          <Text style={styles.label}>Ik3 (kA)</Text>
-          <TextInput style={styles.headerInput} value={headerInfo.ik3} placeholder="t.ex. 6" placeholderTextColor="#CCC" onChangeText={v => setHeaderInfo({...headerInfo, ik3: v})} />
-        </View>
-        <View style={styles.halfInput}>
-          <Text style={styles.label}>Zför (Ω)</Text>
-          <TextInput style={styles.headerInput} value={headerInfo.zfor} placeholder="t.ex. 0.45" placeholderTextColor="#CCC" onChangeText={v => setHeaderInfo({...headerInfo, zfor: v})} />
-        </View>
-      </View>
-
-      <View style={styles.separator} />
-
-      <View style={styles.formatRow}>
-        <TouchableOpacity style={[styles.formatBtn, pageSize === "A4" && styles.activeBtn]} onPress={() => setPageSize("A4")}>
-          <Text style={[styles.btnText, pageSize === "A4" && {color: "#FFF"}]}>A4</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.formatBtn, pageSize === "A5" && styles.activeBtn]} onPress={() => setPageSize("A5")}>
-          <Text style={[styles.btnText, pageSize === "A5" && {color: "#FFF"}]}>A5</Text>
-        </TouchableOpacity>
-        
-        <View style={{flex: 1}} />
-        
-        <TouchableOpacity onPress={resetSchedule} style={styles.resetBtn}>
-          <Ionicons name="trash-outline" size={18} color="#FF3B30" />
-        </TouchableOpacity>
-
-        <View style={{alignItems: 'center', marginLeft: 10}}>
-           <TextInput style={styles.modInput} keyboardType="number-pad" value={moduleCount} onChangeText={adjustRowsCount} />
-           <Text style={styles.modLabel}>RADER</Text>
-        </View>
-      </View>
-
-      <View style={styles.switchRow}>
-        <Text style={styles.switchLabel}>Visa text om Jordfelsbrytare på PDF</Text>
-        <Switch 
-          value={showJfbText}
-          onValueChange={setShowJfbText}
-          trackColor={{ false: "#EEE", true: WorkaholicTheme.colors.primary }}
-          thumbColor="#FFF"
-        />
-      </View>
-    </View>
-  );
+  if (!selectedProject) return null;
 
   return (
     <View style={styles.container}>
@@ -256,52 +347,31 @@ export default function GroupScheduleScreen({ navigation }) {
           data={rows}
           keyExtractor={item => item.id.toString()}
           contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
-          ListHeaderComponent={renderHeaderInputs}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={
+            <ScheduleHeader 
+              headerInfo={headerInfo}
+              setHeaderInfo={setHeaderInfo}
+              pageSize={pageSize}
+              setPageSize={setPageSize}
+              resetSchedule={resetSchedule}
+              moduleCount={moduleCount}
+              adjustRowsCount={adjustRowsCount}
+              showJfbText={showJfbText}
+              setShowJfbText={setShowJfbText}
+            />
+          }
           renderItem={({item, index}) => (
-            <View style={styles.rowCard}>
-              <View style={styles.numBadge}>
-                <Text style={styles.numText}>{item.id}</Text>
-              </View>
-              
-              <TextInput 
-                style={styles.input} 
-                placeholder="Beskrivning..." 
-                placeholderTextColor="#CCC"
-                value={item.label} 
-                onChangeText={(v) => handleLabelChange(v, item.id)} 
-              />
-              
-              {/* 🔑 ÅTERSTÄLLD: Kopiera Text knapp */}
-              {index < rows.length - 1 && (
-                <TouchableOpacity style={styles.copyBtn} onPress={() => copyLabelToNext(index)}>
-                  <Ionicons name="arrow-down-circle-outline" size={20} color="#DDD" />
-                </TouchableOpacity>
-              )}
-
-              <View style={styles.pickerArea}>
-                {/* Ampere Picker */}
-                <TouchableOpacity style={styles.pickerTrigger} onPress={() => openPicker(item.id, 'current')}>
-                  <Text style={styles.pickerValue}>
-                    {item.current ? (item.current === 'N' ? 'N' : `${item.current}A`) : 'Amp'}
-                  </Text>
-                </TouchableOpacity>
-
-                {/* Area Picker */}
-                <TouchableOpacity style={styles.pickerTrigger} onPress={() => openPicker(item.id, 'area')}>
-                  <Text style={styles.pickerValue}>
-                    {item.area ? `${item.area}mm²` : 'Area'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* 🔑 ÅTERSTÄLLD: Kopiera Värden knapp */}
-              {index < rows.length - 1 && (
-                <TouchableOpacity style={styles.copyBtn} onPress={() => copyValuesToNext(index)}>
-                  <Ionicons name="arrow-down-circle-outline" size={20} color={WorkaholicTheme.colors.primary + '40'} />
-                </TouchableOpacity>
-              )}
-            </View>
+            <ScheduleRow 
+              item={item}
+              index={index}
+              totalRows={rows.length}
+              handleLabelChange={handleLabelChange}
+              copyLabelToNext={copyLabelToNext}
+              openPicker={openPicker}
+              copyValuesToNext={copyValuesToNext}
+            />
           )}
         />
       </KeyboardAvoidingView>

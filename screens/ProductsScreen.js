@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,18 +14,13 @@ import {
   Modal,
   SafeAreaView,
   StatusBar,
-  ScrollView // 🔑 HÄR ÄR DEN SAKNADE IMPORTEN!
+  ScrollView
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
-
-// 🔑 Sökfunktionen mot grossister & lokal cache
 import { searchProducts } from "../utils/productSearch";
-
 import AppHeader from "../components/AppHeader";
-import InfoBox from "../components/InfoBox";
-import Button from "../components/Button";
 import { WorkaholicTheme } from "../theme";
 
 // --- HJÄLPFUNKTIONER ---
@@ -47,7 +42,6 @@ const decimalOnly = (text) => {
   return cleaned;
 };
 
-// 🔑 Grossistlista
 const WHOLESALERS = [
   { id: 'local', name: 'Lager', icon: 'cube-outline' },
   { id: 'rexel', name: 'Rexel', icon: 'flash-outline' },
@@ -56,11 +50,112 @@ const WHOLESALERS = [
   { id: 'elektroskandia', name: 'E-skandia', icon: 'bulb-outline' }
 ];
 
+// 🔑 NY INTERN KOMPONENT FÖR ATT FIXA TANGENTBORDS-FOCUS
+const ProductsHeader = React.memo(({ 
+  sumTotalOut, 
+  productCount, 
+  newRow, 
+  setNewRow, 
+  saveProduct, 
+  editingIndex, 
+  setEditingIndex, 
+  setIsModalVisible,
+  initialRowState
+}) => {
+  return (
+    <>
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryRow}>
+          <View>
+            <Text style={styles.summaryLabel}>TOTALT (EXKL. MOMS)</Text>
+            <Text style={styles.summaryValue}>{formatNumber(sumTotalOut)} kr</Text>
+          </View>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{productCount} ARTIKLAR</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.inputCard}>
+        <View style={styles.cardHeader}>
+           <Text style={styles.sectionLabel}>{editingIndex !== null ? "REDIGERA ARTIKEL" : "SNABB-LÄGG TILL"}</Text>
+           <TouchableOpacity onPress={() => setIsModalVisible(true)} style={styles.searchLink}>
+              <Ionicons name="search" size={14} color={WorkaholicTheme.colors.primary} />
+              <Text style={styles.searchLinkText}>MATERIALSÖK</Text>
+           </TouchableOpacity>
+        </View>
+        
+        <View style={styles.inputGroup}>
+          <Text style={styles.miniLabel}>BENÄMNING</Text>
+          <TextInput
+            placeholder="T.ex. Eljo Trend Trapp"
+            value={newRow.name}
+            onChangeText={(v) => setNewRow(s => ({ ...s, name: v }))}
+            style={styles.inputMain}
+            placeholderTextColor="#BBB"
+          />
+        </View>
+
+        <View style={styles.inputRow}>
+          <View style={{ flex: 1.5 }}>
+            <Text style={styles.miniLabel}>ART.NR</Text>
+            <TextInput
+              placeholder="E-nummer..."
+              value={newRow.articleNumber}
+              onChangeText={(v) => setNewRow(s => ({ ...s, articleNumber: v }))}
+              style={styles.input}
+              placeholderTextColor="#BBB"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.miniLabel}>ANTAL</Text>
+            <TextInput 
+                keyboardType="decimal-pad" 
+                value={newRow.quantity} 
+                onChangeText={v => setNewRow(s => ({...s, quantity: decimalOnly(v)}))} 
+                style={styles.input} 
+            />
+          </View>
+        </View>
+
+        <View style={styles.inputRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.miniLabel}>INKÖP (ST)</Text>
+            <TextInput keyboardType="decimal-pad" value={newRow.purchasePrice} onChangeText={v => setNewRow(s => ({...s, purchasePrice: decimalOnly(v)}))} style={styles.input} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.miniLabel}>PÅSLAG %</Text>
+            <TextInput keyboardType="decimal-pad" value={newRow.markup} onChangeText={v => setNewRow(s => ({...s, markup: decimalOnly(v)}))} style={styles.input} />
+          </View>
+        </View>
+
+        <View style={styles.buttonRow}>
+            <TouchableOpacity 
+                style={[styles.mainAddBtn, editingIndex !== null && { backgroundColor: '#FFB300' }]} 
+                onPress={saveProduct}
+            >
+                <Text style={styles.mainAddBtnText}>
+                    {editingIndex !== null ? "UPPDATERA RAD" : "LÄGG TILL I LISTA"}
+                </Text>
+            </TouchableOpacity>
+            
+            {editingIndex !== null && (
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => { setEditingIndex(null); setNewRow(initialRowState); }}>
+                    <Text style={styles.cancelBtnText}>Avbryt</Text>
+                </TouchableOpacity>
+            )}
+        </View>
+      </View>
+
+      <Text style={styles.listTitle}>MATERIALFÖRTECKNING</Text>
+    </>
+  );
+});
+
 export default function ProductsScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
-  const { selectedProject, updateProject } = useContext(ProjectsContext);
+  const { selectedProject, updateProject, allProducts } = useContext(ProjectsContext);
   
-  // 1. HÄMTA PROJEKT
   const project = route.params?.project || selectedProject;
 
   const [products, setProducts] = useState([]);
@@ -83,7 +178,6 @@ export default function ProductsScreen({ navigation, route }) {
   const [modalResults, setModalResults] = useState([]);
   const [selectedInModal, setSelectedInModal] = useState([]);
 
-  // 🛠 KROCKKUDDE 1: Säkrar att products alltid är en array
   useEffect(() => {
     if (project?.products && Array.isArray(project.products)) {
       setProducts(project.products);
@@ -92,30 +186,23 @@ export default function ProductsScreen({ navigation, route }) {
     }
   }, [project]);
 
-  // --- 🔑 DEBOUNCING EFFEKT (100ms) ---
+  // ⚡️ BLIXTSNABB LOKAL SÖKNING OM LAGER ÄR VALT
   useEffect(() => {
     const timer = setTimeout(() => {
       if (isModalVisible) {
-        performModalSearch(modalSearchQuery);
+        if (selectedWholesaler === 'local' && allProducts) {
+          const filtered = allProducts.filter(p => 
+            p.name?.toLowerCase().includes(modalSearchQuery.toLowerCase()) || 
+            p.articleNumber?.includes(modalSearchQuery)
+          ).slice(0, 50);
+          setModalResults(filtered);
+        } else {
+          performModalSearch(modalSearchQuery);
+        }
       }
-    }, 100);
+    }, 150);
     return () => clearTimeout(timer);
-  }, [modalSearchQuery, selectedWholesaler]);
-
-  if (!project) {
-    return (
-      <View style={[styles.centeredContainer, { paddingTop: insets.top }]}>
-        <Ionicons name="folder-open-outline" size={80} color="#CCC" />
-        <Text style={styles.noProjectText}>INGET PROJEKT VALT</Text>
-        <TouchableOpacity 
-          style={styles.goBackBtn} 
-          onPress={() => navigation.navigate("MainTabs")}
-        >
-          <Text style={styles.goBackBtnText}>GÅ TILL PROJEKTLISTAN</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  }, [modalSearchQuery, selectedWholesaler, allProducts]);
 
   const performModalSearch = async (text) => {
     if (text.length < 2) {
@@ -134,8 +221,10 @@ export default function ProductsScreen({ navigation, route }) {
   };
 
   const addModalItemsToProject = async () => {
+    if (selectedInModal.length === 0) return;
+    
     const newItems = selectedInModal.map(item => {
-      const price = parseFloat(item.price || item.originalPrice || item.purchasePrice) || 0;
+      const price = parseFloat(item.price || item.purchasePrice || 0);
       const markup = 25;
       return {
         name: item.label || item.name || "Okänd",
@@ -147,7 +236,6 @@ export default function ProductsScreen({ navigation, route }) {
       };
     });
 
-    // 🛠 KROCKKUDDE 2: Säkrar upp att project.products används ifall lokala listan släpar
     const currentProducts = project?.products || [];
     const updated = [...newItems, ...currentProducts];
     
@@ -159,11 +247,14 @@ export default function ProductsScreen({ navigation, route }) {
   };
 
   const saveProduct = async () => {
-    if (!newRow.name.trim()) return;
+    if (!newRow.name.trim()) {
+      Alert.alert("Väntar", "Du måste skriva en benämning.");
+      return;
+    }
 
     const p = parseFloat(newRow.purchasePrice) || 0;
     const m = parseFloat(newRow.markup) || 0;
-    const q = parseFloat(newRow.quantity) || 0;
+    const q = parseFloat(newRow.quantity) || 1;
 
     const newItem = {
       name: capitalizeFirst(newRow.name.trim()),
@@ -174,10 +265,14 @@ export default function ProductsScreen({ navigation, route }) {
       unitPriceOutExclVat: p * (1 + m / 100),
     };
 
-    // 🛠 KROCKKUDDE 3: Säkrar upp listan vid manuellt tillägg
     const currentProducts = project?.products || [];
-    let updated = editingIndex !== null ? [...currentProducts] : [newItem, ...currentProducts];
-    if (editingIndex !== null) updated[editingIndex] = newItem;
+    let updated = [...currentProducts];
+    
+    if (editingIndex !== null) {
+      updated[editingIndex] = newItem;
+    } else {
+      updated = [newItem, ...updated];
+    }
 
     try {
       await updateProject(project.id, { products: updated });
@@ -189,115 +284,41 @@ export default function ProductsScreen({ navigation, route }) {
     }
   };
 
-  // 🛠 KROCKKUDDE 4: Säkrar matten så att reduce inte kraschar om värden saknas
-  const sumTotalOut = (products || []).reduce((acc, it) => {
-    return acc + (Number(it.unitPriceOutExclVat || 0) * Number(it.quantity || 0));
-  }, 0);
+  const sumTotalOut = useMemo(() => {
+    return products.reduce((acc, it) => acc + (Number(it.unitPriceOutExclVat || 0) * Number(it.quantity || 0)), 0);
+  }, [products]);
+
+  if (!project) return null;
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
       
       <AppHeader 
-        title="PRODUKTER & MATERIAL" 
+        title="MATERIAL" 
         subTitle={capitalizeFirst(project.name)} 
         navigation={navigation} 
       />
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex: 1}}>
         <FlatList
-          data={products || []}
+          data={products}
           keyExtractor={(_, i) => i.toString()}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 100 }}
           ListHeaderComponent={
-            <>
-              <View style={styles.summaryCard}>
-                <View style={styles.summaryRow}>
-                  <View>
-                    <Text style={styles.summaryLabel}>TOTALT (EXKL. MOMS)</Text>
-                    <Text style={styles.summaryValue}>{formatNumber(sumTotalOut)} kr</Text>
-                  </View>
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{(products || []).length} ARTIKLAR</Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.inputCard}>
-                <View style={styles.cardHeader}>
-                   <Text style={styles.sectionLabel}>{editingIndex !== null ? "REDIGERA ARTIKEL" : "SNABB-LÄGG TILL"}</Text>
-                   <TouchableOpacity onPress={() => setIsModalVisible(true)} style={styles.searchLink}>
-                      <Ionicons name="search" size={14} color={WorkaholicTheme.colors.primary} />
-                      <Text style={styles.searchLinkText}>MATERIALSÖK</Text>
-                   </TouchableOpacity>
-                </View>
-                
-                <View style={styles.inputGroup}>
-                  <Text style={styles.miniLabel}>BENÄMNING</Text>
-                  <TextInput
-                    placeholder="T.ex. Eljo Trend Trapp"
-                    value={newRow.name}
-                    onChangeText={(v) => setNewRow(s => ({ ...s, name: v }))}
-                    style={styles.inputMain}
-                    placeholderTextColor="#BBB"
-                  />
-                </View>
-
-                <View style={styles.inputRow}>
-                  <View style={{ flex: 1.5 }}>
-                    <Text style={styles.miniLabel}>ART.NR</Text>
-                    <TextInput
-                      placeholder="E-nummer..."
-                      value={newRow.articleNumber}
-                      onChangeText={(v) => setNewRow(s => ({ ...s, articleNumber: v }))}
-                      style={styles.input}
-                      placeholderTextColor="#BBB"
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.miniLabel}>ANTAL</Text>
-                    <TextInput 
-                        keyboardType="decimal-pad" 
-                        value={newRow.quantity} 
-                        onChangeText={v => setNewRow(s => ({...s, quantity: decimalOnly(v)}))} 
-                        style={styles.input} 
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.inputRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.miniLabel}>INKÖP (ST)</Text>
-                    <TextInput keyboardType="decimal-pad" value={newRow.purchasePrice} onChangeText={v => setNewRow(s => ({...s, purchasePrice: decimalOnly(v)}))} style={styles.input} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.miniLabel}>PÅSLAG %</Text>
-                    <TextInput keyboardType="decimal-pad" value={newRow.markup} onChangeText={v => setNewRow(s => ({...s, markup: decimalOnly(v)}))} style={styles.input} />
-                  </View>
-                </View>
-
-                <View style={styles.buttonRow}>
-                    <TouchableOpacity 
-                        style={[styles.mainAddBtn, editingIndex !== null && { backgroundColor: '#FFB300' }]} 
-                        onPress={saveProduct}
-                    >
-                        <Text style={styles.mainAddBtnText}>
-                            {editingIndex !== null ? "UPPDATERA RAD" : "LÄGG TILL I LISTA"}
-                        </Text>
-                    </TouchableOpacity>
-                    
-                    {editingIndex !== null && (
-                        <TouchableOpacity style={styles.cancelBtn} onPress={() => { setEditingIndex(null); setNewRow(initialRowState); }}>
-                            <Text style={styles.cancelBtnText}>Avbryt</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-              </View>
-
-              <Text style={styles.listTitle}>MATERIALFÖRTECKNING</Text>
-            </>
+            <ProductsHeader 
+              sumTotalOut={sumTotalOut}
+              productCount={products.length}
+              newRow={newRow}
+              setNewRow={setNewRow}
+              saveProduct={saveProduct}
+              editingIndex={editingIndex}
+              setEditingIndex={setEditingIndex}
+              setIsModalVisible={setIsModalVisible}
+              initialRowState={initialRowState}
+            />
           }
           renderItem={({ item, index }) => (
             <View style={styles.productCard}>
@@ -307,7 +328,6 @@ export default function ProductsScreen({ navigation, route }) {
                   <Text style={styles.productSub}>{item.articleNumber} • {item.markup}% påslag</Text>
                 </View>
                 <View style={styles.productPriceArea}>
-                  {/* 🛠 KROCKKUDDE 5: Undviker NaN om databasen saknar format */}
                   <Text style={styles.productTotal}>{formatNumber(Number(item.unitPriceOutExclVat || 0) * Number(item.quantity || 0))}:-</Text>
                   <Text style={styles.productQty}>{item.quantity} st</Text>
                 </View>
@@ -319,7 +339,7 @@ export default function ProductsScreen({ navigation, route }) {
                         articleNumber: item.articleNumber === "-" ? "" : item.articleNumber,
                         purchasePrice: String(item.purchasePrice || 0),
                         markup: String(item.markup || 0),
-                        quantity: String(item.quantity || 0),
+                        quantity: String(item.quantity || 1),
                     });
                     setEditingIndex(index);
                  }} style={styles.actionBtn}>
@@ -328,8 +348,7 @@ export default function ProductsScreen({ navigation, route }) {
                  </TouchableOpacity>
                  <View style={styles.vDivider} />
                  <TouchableOpacity onPress={() => {
-                    const currentProducts = project?.products || [];
-                    const updated = currentProducts.filter((_, i) => i !== index);
+                    const updated = products.filter((_, i) => i !== index);
                     updateProject(project.id, { products: updated });
                  }} style={styles.actionBtn}>
                     <Ionicons name="trash-outline" size={16} color={WorkaholicTheme.colors.error} />
@@ -389,18 +408,19 @@ export default function ProductsScreen({ navigation, route }) {
             </View>
 
             <FlatList
-              data={modalResults || []}
-              keyExtractor={(item, index) => item.dbKey || String(index)}
+              data={modalResults}
+              keyExtractor={(item, index) => item.id || item.articleNumber || String(index)}
+              keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ padding: 15 }}
               renderItem={({ item }) => {
-                const itemArt = item.artNr || item.articleNumber;
-                const isSelected = selectedInModal.find(x => (x.artNr || x.articleNumber) === itemArt);
+                const itemArt = item.artNr || item.articleNumber || item.id;
+                const isSelected = selectedInModal.find(x => (x.artNr || x.articleNumber || x.id) === itemArt);
                 
                 return (
                   <TouchableOpacity 
                     style={[styles.resultCard, isSelected && styles.resultCardSelected]} 
                     onPress={() => {
-                      if (isSelected) setSelectedInModal(selectedInModal.filter(x => (x.artNr || x.articleNumber) !== itemArt));
+                      if (isSelected) setSelectedInModal(selectedInModal.filter(x => (x.artNr || x.articleNumber || x.id) !== itemArt));
                       else setSelectedInModal([...selectedInModal, item]);
                     }}
                   >
@@ -410,7 +430,7 @@ export default function ProductsScreen({ navigation, route }) {
                     </View>
                     <View style={styles.resultPriceBox}>
                        <Text style={[styles.resultPrice, item.isWholesalerPrice && styles.wholesalerPriceText]}>
-                          {item.price}:-
+                          {item.price || item.purchasePrice || 0}:-
                        </Text>
                        {item.isWholesalerPrice && <Text style={styles.wsLabel}>{item.wholesalerName}</Text>}
                     </View>
@@ -443,11 +463,6 @@ export default function ProductsScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FB' },
-  centeredContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FB', padding: 30 },
-  noProjectText: { fontSize: 18, fontWeight: '900', color: '#1C1C1E', marginTop: 20 },
-  goBackBtn: { marginTop: 25, backgroundColor: WorkaholicTheme.colors.primary, paddingVertical: 15, paddingHorizontal: 30, borderRadius: 12 },
-  goBackBtnText: { color: '#FFF', fontWeight: '800' },
-
   summaryCard: { backgroundColor: WorkaholicTheme.colors.primary, padding: 20, borderRadius: 25, marginBottom: 20, elevation: 4 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   summaryLabel: { fontSize: 10, fontWeight: '900', color: 'rgba(255,255,255,0.7)', letterSpacing: 1 },
@@ -491,7 +506,6 @@ const styles = StyleSheet.create({
   emptyContainer: { alignItems: 'center', marginTop: 40, opacity: 0.5 },
   emptyText: { marginTop: 10, color: '#999', fontWeight: '700', fontSize: 14 },
 
-  // Modal styles
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#EEE' },
   modalCloseBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F5F5F7', justifyContent: 'center', alignItems: 'center' },
   modalTitle: { fontSize: 18, fontWeight: '900', color: '#1C1C1E' },
