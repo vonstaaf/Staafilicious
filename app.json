@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.staafilicious.workaholic",
-      "buildNumber": "22",
+      "buildNumber": "23",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Appen behöver tillgång till dina bilder för att du ska kunna ladda upp din företagslogotyp och dokumentera dina Projekt.",
         "NSCameraUsageDescription": "Appen behöver tillgång till kameran för att du ska kunna ta foton direkt till dina Projekt.",
@@ -24,7 +24,7 @@
     },
     "android": {
       "package": "com.vonstaaf.staafiliciousfrontend",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#121212"
@@ -57,7 +57,8 @@
           "project": "react-native",
           "organization": "workaholic"
         }
-      ]
+      ],
+      "@sentry/react-native"
     ],
     "extra": {
       "eas": {

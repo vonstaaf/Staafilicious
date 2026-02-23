@@ -11,7 +11,8 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { Ionicons } from "@expo/vector-icons";
 import Button from "../components/Button";
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 import Constants from 'expo-constants';
 import { useBadges } from "../context/BadgeContext";
 import { uploadLogoToCloud } from "../utils/settingsService";
@@ -23,15 +24,25 @@ const WHOLESALERS = [
   { id: 'elektroskandia', name: 'E-skandia', icon: 'bulb' }
 ];
 
+const DISCOUNT_GROUPS = [
+  { id: 'kabel', label: 'Kabel & Ledning' },
+  { id: 'installation', label: 'Installationsmaterial' },
+  { id: 'belysning', label: 'Belysning' },
+  { id: 'central', label: 'Central & Norm' },
+  { id: 'ovrigt', label: 'Övrigt / Standard' }
+];
+
 export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { currentLogo, setCurrentLogo } = useBadges();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [integrations, setIntegrations] = useState({});
+  const [importing, setImporting] = useState(false);
+  
+  const [discountAgreements, setDiscountAgreements] = useState({});
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [activeWholesaler, setActiveWholesaler] = useState(null);
-  const [tempKeys, setTempKeys] = useState({ apiKey: '', apiSecret: '', customerNumber: '' });
+  const [tempDiscounts, setTempDiscounts] = useState({});
 
   const appVersion = Constants.expoConfig?.version || "1.0.0";
   const buildVersion = Platform.OS === 'ios' 
@@ -48,7 +59,9 @@ export default function SettingsScreen({ navigation }) {
       const user = auth.currentUser;
       if (user) {
         const userDoc = await getDoc(doc(db, "users", user.uid));
-        if (userDoc.exists()) setIntegrations(userDoc.data().integrations || {});
+        if (userDoc.exists()) {
+          setDiscountAgreements(userDoc.data().discountAgreements || {});
+        }
       }
     } catch (e) { console.error("Laddningsfel:", e); }
     finally { setLoading(false); }
@@ -73,25 +86,89 @@ export default function SettingsScreen({ navigation }) {
     }
   };
 
-  const openIntegration = (wholesaler) => {
+  const handleImportFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'text/plain',
+      });
+
+      if (result.canceled) return;
+
+      setImporting(true);
+      const fileUri = result.assets[0].uri;
+      
+      // Använder latin1 för att hantera Ahlsells teckenkodning (ÅÄÖ)
+      const fileContent = await FileSystem.readAsStringAsync(fileUri, { encoding: 'latin1' });
+      const lines = fileContent.split('\n');
+      
+      let newDiscounts = { ...tempDiscounts };
+      let count = 0;
+
+      lines.forEach(line => {
+        // Ahlsell format: Letar efter rader som innehåller rabattdata (ofta märkt "1N")
+        if (line.includes("1N") && line.length > 60) {
+          const groupCode = line.substring(30, 36).trim();
+          const rawDiscount = line.substring(36, 41).trim();
+          const label = line.substring(66, 95).trim();
+
+          if (groupCode && rawDiscount) {
+            // Konverterar 04200 till 42.00
+            const discountPercent = (parseFloat(rawDiscount) / 100).toString();
+            newDiscounts[groupCode] = {
+              percent: discountPercent,
+              label: label || groupCode
+            };
+            count++;
+          }
+        }
+      });
+
+      if (count === 0) {
+        Alert.alert("Ingen data hittades", "Kunde inte hitta giltiga rabattrader i filen.");
+      } else {
+        setTempDiscounts(newDiscounts);
+        Alert.alert("Import klar", `Hittade ${count} rabattgrupper. Granska och tryck på SPARA.`);
+      }
+    } catch (error) {
+      Alert.alert("Fel", "Kunde inte läsa rabattfilen.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const openDiscountModal = (wholesaler) => {
     setActiveWholesaler(wholesaler);
-    const existing = integrations[wholesaler.id] || { apiKey: '', apiSecret: '', customerNumber: '' };
-    setTempKeys(existing);
+    const existing = discountAgreements[wholesaler.id] || {};
+    setTempDiscounts(existing);
     setIsModalVisible(true);
   };
 
-  const saveIntegration = async () => {
+  const handleDiscountChange = (groupId, value, label) => {
+    let cleaned = value.replace(/[^0-9]/g, "");
+    if (parseInt(cleaned) > 100) cleaned = "100";
+    
+    // Hanterar både objekt-format (importerat) och sträng-format (manuellt)
+    setTempDiscounts({ 
+      ...tempDiscounts, 
+      [groupId]: typeof tempDiscounts[groupId] === 'object' 
+        ? { ...tempDiscounts[groupId], percent: cleaned }
+        : cleaned 
+    });
+  };
+
+  const saveDiscountAgreement = async () => {
     if (!auth.currentUser) return;
     setLoading(true);
     try {
       const userRef = doc(db, "users", auth.currentUser.uid);
-      const updatedIntegrations = { ...integrations, [activeWholesaler.id]: tempKeys };
-      await updateDoc(userRef, { integrations: updatedIntegrations });
-      setIntegrations(updatedIntegrations);
+      const updatedAgreements = { ...discountAgreements, [activeWholesaler.id]: tempDiscounts };
+      
+      await updateDoc(userRef, { discountAgreements: updatedAgreements });
+      
+      setDiscountAgreements(updatedAgreements);
       setIsModalVisible(false);
       Keyboard.dismiss();
-      Alert.alert("Sparat", "Uppgifterna har uppdaterats.");
-    } catch (e) { Alert.alert("Fel", "Kunde inte spara."); }
+    } catch (e) { Alert.alert("Fel", "Kunde inte spara rabattbrevet."); }
     finally { setLoading(false); }
   };
 
@@ -100,6 +177,71 @@ export default function SettingsScreen({ navigation }) {
       { text: "Avbryt", style: "cancel" },
       { text: "Logga ut", style: "destructive", onPress: () => signOut(auth) }
     ]);
+  };
+
+  const getActiveDiscountsCount = (wholesalerId) => {
+    const agreement = discountAgreements[wholesalerId];
+    if (!agreement) return 0;
+    return Object.values(agreement).filter(val => {
+      const v = typeof val === 'object' ? val.percent : val;
+      return v && v.toString().trim() !== "";
+    }).length;
+  };
+
+  const renderDiscountInputs = () => {
+    const keys = Object.keys(tempDiscounts);
+    
+    // Om det är Ahlsell och vi har specifika koder från filen, visa dem dynamiskt
+    if (activeWholesaler?.id === 'ahlsell' && keys.length > 0 && !keys.every(k => DISCOUNT_GROUPS.some(dg => dg.id === k))) {
+      return keys.sort().map(code => {
+        const data = tempDiscounts[code];
+        const percentValue = typeof data === 'object' ? data.percent : data;
+        const labelValue = typeof data === 'object' ? data.label : code;
+
+        return (
+          <View key={code} style={styles.discountRow}>
+            <View style={{flex: 1}}>
+              <Text style={styles.discountLabel}>{labelValue}</Text>
+              <Text style={styles.codeText}>{code}</Text>
+            </View>
+            <View style={styles.inputWrapper}>
+              <TextInput 
+                style={styles.discountInput} 
+                value={percentValue?.toString() || ""} 
+                onChangeText={t => handleDiscountChange(code, t, labelValue)}
+                placeholder="0"
+                keyboardType="numeric"
+                maxLength={5}
+              />
+              <Text style={styles.percentSymbol}>%</Text>
+            </View>
+          </View>
+        );
+      });
+    }
+
+    // Annars visa standardgrupper
+    return DISCOUNT_GROUPS.map(group => {
+      const data = tempDiscounts[group.id];
+      const percentValue = typeof data === 'object' ? data.percent : data;
+
+      return (
+        <View key={group.id} style={styles.discountRow}>
+          <Text style={styles.discountLabel}>{group.label}</Text>
+          <View style={styles.inputWrapper}>
+            <TextInput 
+              style={styles.discountInput} 
+              value={percentValue?.toString() || ""} 
+              onChangeText={t => handleDiscountChange(group.id, t, group.label)}
+              placeholder="0"
+              keyboardType="number-pad"
+              maxLength={3}
+            />
+            <Text style={styles.percentSymbol}>%</Text>
+          </View>
+        </View>
+      );
+    });
   };
 
   const SettingRow = ({ icon, label, children, onPress, subLabel, iconColor }) => (
@@ -145,18 +287,21 @@ export default function SettingsScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.sectionTitle}>INTEGRATIONER (GROSSISTER)</Text>
-      {WHOLESALERS.map(ws => (
-        <SettingRow 
-          key={ws.id}
-          icon={ws.icon} 
-          label={ws.name} 
-          subLabel={integrations[ws.id]?.apiKey ? "Kopplad ✓" : "Ej konfigurerad"}
-          onPress={() => openIntegration(ws)}
-        >
-          <Ionicons name="chevron-forward" size={20} color="#ccc" />
-        </SettingRow>
-      ))}
+      <Text style={styles.sectionTitle}>MINA RABATTBREV</Text>
+      {WHOLESALERS.map(ws => {
+        const count = getActiveDiscountsCount(ws.id);
+        return (
+          <SettingRow 
+            key={ws.id}
+            icon={ws.icon} 
+            label={ws.name} 
+            subLabel={count > 0 ? `${count} rabattgrupper inlagda` : "Inget rabattbrev upplagt"}
+            onPress={() => openDiscountModal(ws)}
+          >
+            <Ionicons name="chevron-forward" size={20} color="#ccc" />
+          </SettingRow>
+        );
+      })}
 
       <Text style={styles.sectionTitle}>PREFERENSER</Text>
       <SettingRow icon="notifications-outline" label="Notiser">
@@ -184,38 +329,51 @@ export default function SettingsScreen({ navigation }) {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{activeWholesaler?.name}</Text>
-              <TouchableOpacity onPress={() => setIsModalVisible(false)}>
-                <Ionicons name="close-circle" size={28} color="#CCC" />
+              <View>
+                <Text style={styles.modalTitle}>Rabattbrev</Text>
+                <Text style={styles.modalSubtitle}>{activeWholesaler?.name}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={24} color="#1C1C1E" />
               </TouchableOpacity>
             </View>
-            <ScrollView bounces={false}>
-              <Text style={styles.inputLabel}>API KEY / CLIENT ID</Text>
-              <TextInput 
-                style={styles.input} 
-                value={tempKeys.apiKey} 
-                onChangeText={t => setTempKeys({...tempKeys, apiKey: t})}
-                placeholder="Klistra in nyckel..."
-                autoCapitalize="none"
-              />
-              <Text style={styles.inputLabel}>API SECRET</Text>
-              <TextInput 
-                style={styles.input} 
-                value={tempKeys.apiSecret} 
-                onChangeText={t => setTempKeys({...tempKeys, apiSecret: t})}
-                placeholder="Klistra in secret..."
-                secureTextEntry
-              />
-              <Text style={styles.inputLabel}>KUNDNUMMER</Text>
-              <TextInput 
-                style={styles.input} 
-                value={tempKeys.customerNumber} 
-                onChangeText={t => setTempKeys({...tempKeys, customerNumber: t})}
-                placeholder="Ditt kundnummer"
-                keyboardType="numeric"
-              />
-              <View style={{marginTop: 20}}>
-                {loading ? <ActivityIndicator color={WorkaholicTheme.colors.primary} /> : <Button title="SPARA KOPPLING" onPress={saveIntegration} />}
+            
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 20}}>
+              {activeWholesaler?.id === 'ahlsell' && (
+                <TouchableOpacity 
+                  style={styles.importCard} 
+                  onPress={handleImportFile}
+                  disabled={importing}
+                >
+                  <View style={styles.importIconCircle}>
+                    {importing ? (
+                      <ActivityIndicator size="small" color={WorkaholicTheme.colors.primary} />
+                    ) : (
+                      <Ionicons name="document-attach-outline" size={22} color={WorkaholicTheme.colors.primary} />
+                    )}
+                  </View>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.importTitle}>Importera Ahlsell-fil</Text>
+                    <Text style={styles.importSub}>Läs in rabattbrev (.txt) automatiskt</Text>
+                  </View>
+                  <Ionicons name="cloud-upload-outline" size={20} color="#8E8E93" />
+                </TouchableOpacity>
+              )}
+
+              <Text style={styles.infoText}>
+                {Object.keys(tempDiscounts).length > 0 
+                  ? "Granska dina rabatter nedan. Du kan även justera dem manuellt."
+                  : "Fyll i din rabattsats manuellt eller använd importfunktionen ovan."}
+              </Text>
+
+              {renderDiscountInputs()}
+
+              <View style={{marginTop: 25}}>
+                {loading ? (
+                  <ActivityIndicator color={WorkaholicTheme.colors.primary} />
+                ) : (
+                  <Button title="SPARA RABATTBREV" onPress={saveDiscountAgreement} />
+                )}
               </View>
             </ScrollView>
           </View>
@@ -243,10 +401,21 @@ const styles = StyleSheet.create({
   subLabel: { fontSize: 12, color: "#8E8E93", marginTop: 2 },
   versionText: { fontSize: 14, color: "#8E8E93", fontWeight: "500" },
   logoutContainer: { marginTop: 30 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: '#FFF', borderRadius: 20, padding: 25, elevation: 5, maxHeight: '80%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: WorkaholicTheme.colors.primary },
-  inputLabel: { fontSize: 10, fontWeight: '800', color: '#999', marginBottom: 5, marginTop: 15 },
-  input: { backgroundColor: '#F2F2F7', padding: 15, borderRadius: 12, fontSize: 14, fontWeight: '600', color: '#1C1C1E' }
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, maxHeight: '85%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
+  modalTitle: { fontSize: 24, fontWeight: '900', color: '#1C1C1E' },
+  modalSubtitle: { fontSize: 14, fontWeight: '700', color: WorkaholicTheme.colors.primary, marginTop: 4 },
+  closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F2F2F7', justifyContent: 'center', alignItems: 'center' },
+  infoText: { fontSize: 13, color: '#666', lineHeight: 20, marginBottom: 25, fontWeight: '500' },
+  importCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F2F7', borderRadius: 12, padding: 15, marginBottom: 20, borderWidth: 1, borderColor: '#E5E5EA' },
+  importIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  importTitle: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
+  importSub: { fontSize: 12, color: '#8E8E93', marginTop: 1 },
+  discountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F2F2F7' },
+  discountLabel: { fontSize: 15, fontWeight: '700', color: '#333', flex: 1 },
+  codeText: { fontSize: 10, color: WorkaholicTheme.colors.primary, fontWeight: '700', marginTop: 2 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F2F2F7', borderRadius: 10, paddingHorizontal: 15 },
+  discountInput: { fontSize: 16, fontWeight: '800', color: '#1C1C1E', paddingVertical: 12, width: 50, textAlign: 'right' },
+  percentSymbol: { fontSize: 16, fontWeight: '800', color: '#8E8E93', marginLeft: 5 },
 });

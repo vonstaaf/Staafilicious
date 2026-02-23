@@ -67,8 +67,8 @@ export default function ProtocolsHubScreen({ route, navigation }) {
 
   // 2. LOGIK FÖR ATT VISA RÄTT KNAPPAR
   const current = profession ? profession.toLowerCase() : "";
-  const isElektriker = current.includes("el"); 
-  const isSnickare = current.includes("snickare") || current.includes("bygg");
+  const isEl = current.includes("el"); 
+  const isBygg = current.includes("Bygg") || current.includes("bygg");
   const isRormokare = current.includes("rör") || current.includes("vvs");
 
   // Funktion för att starta ett protokoll med en specifik mall
@@ -127,8 +127,8 @@ export default function ProtocolsHubScreen({ route, navigation }) {
           onPress={() => navigation.navigate("InspectionScreen", { project })} 
         />
 
-        {/* --- KONTROLL FÖR ELEKTRIKER --- */}
-        {isElektriker && (
+        {/* --- KONTROLL FÖR El --- */}
+        {isEl && (
           <>
             <ProtocolCard 
               title="GRUPPSCHEMA" 
@@ -166,12 +166,12 @@ export default function ProtocolsHubScreen({ route, navigation }) {
           </>
         )}
 
-        {/* --- KONTROLL FÖR SNICKARE --- */}
-        {isSnickare && (
-          <ProtocolCard title="KVALITETSDOKUMENT" sub="Specifikt för Snickare" icon="hammer" color="#FF5722" disabled={true} />
+        {/* --- KONTROLL FÖR Bygg --- */}
+        {isBygg && (
+          <ProtocolCard title="KVALITETSDOKUMENT" sub="Specifikt för Bygg" icon="hammer" color="#FF5722" disabled={true} />
         )}
 
-        {/* --- KONTROLL FÖR RÖRMOKARE --- */}
+        {/* --- KONTROLL FÖR Rör --- */}
         {isRormokare && (
           <ProtocolCard title="SÄKER VATTEN" sub="Specifikt för VVS" icon="water" color="#03A9F4" disabled={true} />
         )}

@@ -35,7 +35,7 @@ export default function ProfileScreen({ navigation }) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [profession, setProfession] = useState("Elektriker"); 
+  const [profession, setProfession] = useState("El"); 
   const [companyName, setCompanyName] = useState("");
   const [orgNr, setOrgNr] = useState("");
   const [phone, setPhone] = useState("");
@@ -55,11 +55,11 @@ export default function ProfileScreen({ navigation }) {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const d = docSnap.data();
-        let fetchedProf = d.profession || "Elektriker";
+        let fetchedProf = d.profession || "El";
         let pLower = fetchedProf.toLowerCase();
-        if (pLower.includes("el")) setProfession("Elektriker");
-        else if (pLower.includes("snickare") || pLower.includes("bygg")) setProfession("Snickare");
-        else if (pLower.includes("rör") || pLower.includes("vvs")) setProfession("Rörmokare");
+        if (pLower.includes("el")) setProfession("El");
+        else if (pLower.includes("Bygg") || pLower.includes("bygg")) setProfession("Bygg");
+        else if (pLower.includes("rör") || pLower.includes("vvs")) setProfession("Rör");
         else setProfession(fetchedProf);
         setCompanyName(d.companyName || "");
         setOrgNr(d.orgNr || "");
@@ -120,7 +120,7 @@ export default function ProfileScreen({ navigation }) {
     ]);
   };
 
-  const ROLES = ['Elektriker', 'Snickare', 'Rörmokare'];
+  const ROLES = ['El', 'Bygg', 'Rör'];
 
   return (
     <View style={{ flex: 1, backgroundColor: "#F8F9FB" }}>
@@ -200,7 +200,7 @@ export default function ProfileScreen({ navigation }) {
                     activeOpacity={0.7}
                   >
                     <Ionicons 
-                      name={role === 'Elektriker' ? 'flash' : role === 'Snickare' ? 'hammer' : 'water'} 
+                      name={role === 'El' ? 'flash' : role === 'Bygg' ? 'hammer' : 'water'} 
                       size={20} 
                       color={isActive ? '#FFF' : '#CCC'} 
                     />

@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect, useRef, useCallback, ReactMemo } from "react";
+import React, { useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -12,8 +12,7 @@ import {
   Platform,
   Image,
   ActivityIndicator,
-  StatusBar,
-  Dimensions
+  StatusBar
 } from "react-native";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SignatureScreen from "react-native-signature-canvas";
@@ -32,10 +31,16 @@ const capitalizeFirst = (text) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
-// 🔑 NY INTERN KOMPONENT: STORY ITEM (Fixar fokus-bugg i kontroll-läget)
+// 🔑 MEMOISERAD STORY ITEM: Förhindrar tangentbords-lag och fokus-buggar
 const InspectionStoryItem = React.memo(({ 
   item, checks, setStatus, rowComments, setRowComments, images, takePhoto, persistData 
 }) => {
+  
+  // Funktion för att hantera textändring utan att tappa fokus
+  const handleCommentChange = (t) => {
+    setRowComments(prev => ({ ...prev, [item.id]: t }));
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.storyContent} keyboardShouldPersistTaps="handled">
       <View style={styles.storyCard}>
@@ -80,7 +85,7 @@ const InspectionStoryItem = React.memo(({
           placeholder="Mätvärden eller noteringar..." 
           multiline
           value={rowComments[item.id] || ""}
-          onChangeText={t => setRowComments({ ...rowComments, [item.id]: t })}
+          onChangeText={handleCommentChange}
           onBlur={() => persistData({ inspectionRowComments: rowComments })}
           placeholderTextColor="#BBB"
         />
@@ -106,13 +111,18 @@ const InspectionStoryItem = React.memo(({
 });
 
 export default function InspectionScreen({ route, navigation }) {
-  const { selectedProject, updateProject } = useContext(ProjectsContext);
+  const insets = useSafeAreaInsets();
   const signatureRef = useRef();
   const isSavingRef = useRef(false);
-  const insets = useSafeAreaInsets();
+  const { projects, selectedProject, updateProject } = useContext(ProjectsContext);
 
-  const project = route.params?.project || selectedProject;
+  // 🔑 1. Hitta projektet LIVE för att UI ska uppdateras direkt vid ändringar
+  const projectId = route.params?.project?.id || selectedProject?.id;
+  const project = useMemo(() => {
+    return projects.find(p => p.id === projectId) || selectedProject;
+  }, [projects, projectId, selectedProject]);
 
+  // States
   const [items, setItems] = useState([]);
   const [checks, setChecks] = useState({}); 
   const [rowComments, setRowComments] = useState({});
@@ -129,6 +139,7 @@ export default function InspectionScreen({ route, navigation }) {
   const [editingHistoryId, setEditingHistoryId] = useState(null);
   const [companyData, setCompanyData] = useState(null);
 
+  // Lyssna på företagsuppgifter
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) return;
@@ -138,11 +149,11 @@ export default function InspectionScreen({ route, navigation }) {
     return () => unsubscribe();
   }, []);
 
+  // 🔑 2. Synka lokal state med Live-projektet (om vi inte redigerar ett arkiv)
   useEffect(() => {
     if (route.params?.customTemplate) {
         setItems(route.params.customTemplate);
         setInspectionSubtitle(route.params.customTitle || ""); 
-        setChecks({}); setRowComments({}); setGeneralNotes(""); setImages([]); setCurrentIndex(0);
     } 
     else if (route.params?.editMode && route.params?.existingData) {
       const data = route.params.existingData;
@@ -154,9 +165,10 @@ export default function InspectionScreen({ route, navigation }) {
       setNameClarification(data.signedBy || ""); 
       setImages(data.images || []);
       setInspectionSubtitle(data.description || "");
-      setCurrentIndex(0);
     } 
     else if (project) {
+      // Vi uppdaterar bara om vi inte är mitt i en Story-mode inmatning 
+      // för att undvika att cursor hoppar
       setItems(project.inspectionItems || []);
       setChecks(project.currentInspections || {});
       setRowComments(project.currentInspectionRowComments || {});
@@ -195,7 +207,7 @@ export default function InspectionScreen({ route, navigation }) {
         setImages(n);
         persistData({ images: n }); 
     }
-  }
+  };
 
   const currentItem = items[currentIndex];
   const isLastStep = currentIndex === items.length - 1;
@@ -263,6 +275,7 @@ export default function InspectionScreen({ route, navigation }) {
     }, 400);
   };
 
+  // Mall-funktioner
   const addNewSection = () => { 
     const n = [...items, {id: "s"+Date.now(), label: "Ny punkt", section: "Ny Kategori", desc: ""}]; 
     setItems(n); persistData({inspectionItems: n}); 
@@ -360,6 +373,7 @@ export default function InspectionScreen({ route, navigation }) {
                             <TextInput 
                               style={[styles.editInput, {fontSize: 12, color: '#666', borderBottomWidth: 0}]} 
                               value={item.desc} 
+                              placeholder="Kort instruktion (valfritt)"
                               onChangeText={(txt) => setItems(items.map(it => it.id === item.id ? { ...it, desc: txt } : it))} 
                               onBlur={() => persistData({ inspectionItems: items })}
                             />
@@ -486,7 +500,8 @@ const styles = StyleSheet.create({
   choiceContainer: { flexDirection: 'row', backgroundColor: '#F5F5F7', borderRadius: 12, padding: 4 },
   choiceBtn: { width: 45, height: 40, justifyContent: 'center', alignItems: 'center', borderRadius: 10 },
   choiceOK: { backgroundColor: '#34C759' },
-  choiceNA: { backgroundColor: '#FF3B30' },
+  choiceNA: { backgroundColor: '#8E8E93' },
+  choiceFail: { backgroundColor: '#FF3B30' },
   editInput: { borderBottomWidth: 1, borderColor: "#EEE", padding: 10, fontSize: 15, fontWeight: '700', marginBottom: 5 },
   addSectionBtn: { backgroundColor: "#FFB300", padding: 18, borderRadius: 15, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   addSectionText: { color: "#FFF", fontWeight: "900", marginLeft: 8, fontSize: 13 },

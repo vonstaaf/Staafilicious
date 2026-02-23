@@ -29,11 +29,6 @@ const formatNumber = (n) => {
   return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 };
 
-const capitalizeFirst = (text) => {
-  if (!text) return "";
-  return text.charAt(0).toUpperCase() + text.slice(1);
-};
-
 const decimalOnly = (text) => {
   let cleaned = text.replace(",", ".");
   cleaned = cleaned.replace(/[^0-9.]/g, "");
@@ -50,7 +45,7 @@ const WHOLESALERS = [
   { id: 'elektroskandia', name: 'E-skandia', icon: 'bulb-outline' }
 ];
 
-// 🔑 NY INTERN KOMPONENT FÖR ATT FIXA TANGENTBORDS-FOCUS
+// 🔑 MEMOISERAD HEADER
 const ProductsHeader = React.memo(({ 
   sumTotalOut, 
   productCount, 
@@ -62,6 +57,13 @@ const ProductsHeader = React.memo(({
   setIsModalVisible,
   initialRowState
 }) => {
+
+  // 🔑 FIX FÖR ATT TEXT INTE SKA FÖRSVINNA VID RADERING
+  const handleNameChange = (v) => {
+    const formatted = v.length > 0 ? v.charAt(0).toUpperCase() + v.slice(1) : v;
+    setNewRow(s => ({ ...s, name: formatted }));
+  };
+
   return (
     <>
       <View style={styles.summaryCard}>
@@ -78,11 +80,11 @@ const ProductsHeader = React.memo(({
 
       <View style={styles.inputCard}>
         <View style={styles.cardHeader}>
-           <Text style={styles.sectionLabel}>{editingIndex !== null ? "REDIGERA ARTIKEL" : "SNABB-LÄGG TILL"}</Text>
-           <TouchableOpacity onPress={() => setIsModalVisible(true)} style={styles.searchLink}>
-              <Ionicons name="search" size={14} color={WorkaholicTheme.colors.primary} />
-              <Text style={styles.searchLinkText}>MATERIALSÖK</Text>
-           </TouchableOpacity>
+            <Text style={styles.sectionLabel}>{editingIndex !== null ? "REDIGERA ARTIKEL" : "SNABB-LÄGG TILL"}</Text>
+            <TouchableOpacity onPress={() => setIsModalVisible(true)} style={styles.searchLink}>
+               <Ionicons name="search" size={14} color={WorkaholicTheme.colors.primary} />
+               <Text style={styles.searchLinkText}>MATERIALSÖK</Text>
+            </TouchableOpacity>
         </View>
         
         <View style={styles.inputGroup}>
@@ -90,9 +92,12 @@ const ProductsHeader = React.memo(({
           <TextInput
             placeholder="T.ex. Eljo Trend Trapp"
             value={newRow.name}
-            onChangeText={(v) => setNewRow(s => ({ ...s, name: v }))}
+            // 🔑 Använder fixade funktionen
+            onChangeText={handleNameChange}
             style={styles.inputMain}
             placeholderTextColor="#BBB"
+            autoCapitalize="sentences"
+            blurOnSubmit={false}
           />
         </View>
 
@@ -154,9 +159,15 @@ const ProductsHeader = React.memo(({
 
 export default function ProductsScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
-  const { selectedProject, updateProject, allProducts } = useContext(ProjectsContext);
   
-  const project = route.params?.project || selectedProject;
+  // 🔑 Hämta 'projects' live
+  const { projects, selectedProject, updateProject, allProducts } = useContext(ProjectsContext);
+  
+  // 🔑 Hitta rätt projekt LIVE i listan för att UI ska uppdateras
+  const projectId = route.params?.project?.id || selectedProject?.id;
+  const project = useMemo(() => {
+    return projects.find(p => p.id === projectId) || selectedProject;
+  }, [projects, projectId, selectedProject]);
 
   const [products, setProducts] = useState([]);
   const [selectedWholesaler, setSelectedWholesaler] = useState('local');
@@ -178,6 +189,7 @@ export default function ProductsScreen({ navigation, route }) {
   const [modalResults, setModalResults] = useState([]);
   const [selectedInModal, setSelectedInModal] = useState([]);
 
+  // Uppdatera listan när projektet i Contextet ändras
   useEffect(() => {
     if (project?.products && Array.isArray(project.products)) {
       setProducts(project.products);
@@ -186,7 +198,7 @@ export default function ProductsScreen({ navigation, route }) {
     }
   }, [project]);
 
-  // ⚡️ BLIXTSNABB LOKAL SÖKNING OM LAGER ÄR VALT
+  // Blixtsnabb sökning
   useEffect(() => {
     const timer = setTimeout(() => {
       if (isModalVisible) {
@@ -236,6 +248,7 @@ export default function ProductsScreen({ navigation, route }) {
       };
     });
 
+    // 🔑 Använd den absoluta live-datan
     const currentProducts = project?.products || [];
     const updated = [...newItems, ...currentProducts];
     
@@ -257,7 +270,7 @@ export default function ProductsScreen({ navigation, route }) {
     const q = parseFloat(newRow.quantity) || 1;
 
     const newItem = {
-      name: capitalizeFirst(newRow.name.trim()),
+      name: newRow.name.trim(),
       articleNumber: newRow.articleNumber.trim() || "-",
       purchasePrice: p,
       markup: m,
@@ -265,6 +278,7 @@ export default function ProductsScreen({ navigation, route }) {
       unitPriceOutExclVat: p * (1 + m / 100),
     };
 
+    // 🔑 Använd live-listan från projektet
     const currentProducts = project?.products || [];
     let updated = [...currentProducts];
     
@@ -293,19 +307,13 @@ export default function ProductsScreen({ navigation, route }) {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
-      
-      <AppHeader 
-        title="MATERIAL" 
-        subTitle={capitalizeFirst(project.name)} 
-        navigation={navigation} 
-      />
+      <AppHeader title="MATERIAL" subTitle={project.name} navigation={navigation} />
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex: 1}}>
         <FlatList
           data={products}
           keyExtractor={(_, i) => i.toString()}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
           contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 100 }}
           ListHeaderComponent={
             <ProductsHeader 
@@ -357,16 +365,10 @@ export default function ProductsScreen({ navigation, route }) {
               </View>
             </View>
           )}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-                <Ionicons name="basket-outline" size={50} color="#DDD" />
-                <Text style={styles.emptyText}>Inga artiklar tillagda än.</Text>
-            </View>
-          }
         />
       </KeyboardAvoidingView>
 
-      {/* MATERIALSÖK MODAL */}
+      {/* MATERIALSÖK MODAL - BEHÅLL SOM DEN ÄR */}
       <Modal visible={isModalVisible} animationType="slide">
         <SafeAreaView style={{ flex: 1, backgroundColor: '#F8F9FB' }}>
             <View style={styles.modalHeader}>
@@ -410,8 +412,6 @@ export default function ProductsScreen({ navigation, route }) {
             <FlatList
               data={modalResults}
               keyExtractor={(item, index) => item.id || item.articleNumber || String(index)}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ padding: 15 }}
               renderItem={({ item }) => {
                 const itemArt = item.artNr || item.articleNumber || item.id;
                 const isSelected = selectedInModal.find(x => (x.artNr || x.articleNumber || x.id) === itemArt);
@@ -429,16 +429,9 @@ export default function ProductsScreen({ navigation, route }) {
                       <Text style={styles.resultArt}>Art.nr: {itemArt}</Text>
                     </View>
                     <View style={styles.resultPriceBox}>
-                       <Text style={[styles.resultPrice, item.isWholesalerPrice && styles.wholesalerPriceText]}>
-                          {item.price || item.purchasePrice || 0}:-
-                       </Text>
-                       {item.isWholesalerPrice && <Text style={styles.wsLabel}>{item.wholesalerName}</Text>}
+                       <Text style={styles.resultPrice}>{item.price || item.purchasePrice || 0}:-</Text>
                     </View>
-                    <Ionicons 
-                        name={isSelected ? "checkmark-circle" : "add-circle-outline"} 
-                        size={26} 
-                        color={isSelected ? "#34C759" : "#DDD"} 
-                    />
+                    <Ionicons name={isSelected ? "checkmark-circle" : "add-circle-outline"} size={26} color={isSelected ? "#34C759" : "#DDD"} />
                   </TouchableOpacity>
                 );
               }}
@@ -451,7 +444,7 @@ export default function ProductsScreen({ navigation, route }) {
                 disabled={selectedInModal.length === 0}
               >
                 <Text style={[styles.addSelectedText, selectedInModal.length === 0 && { color: '#AAA' }]}>
-                    {selectedInModal.length > 0 ? `LÄGG TILL ${selectedInModal.length} ARTIKLAR` : "VÄLJ ARTIKLAR"}
+                    LÄGG TILL {selectedInModal.length} ARTIKLAR
                 </Text>
               </TouchableOpacity>
             </View>

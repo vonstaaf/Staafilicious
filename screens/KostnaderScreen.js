@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState, useMemo } from "react";
+import React, { useContext, useEffect, useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -24,11 +24,6 @@ const formatNumber = (n) => {
   return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 };
 
-const capitalizeFirst = (text) => {
-  if (!text) return "";
-  return text.charAt(0).toUpperCase() + text.slice(1);
-};
-
 const decimalOnly = (text) => {
   let cleaned = text.replace(",", ".").replace(/[^0-9.]/g, "");
   const parts = cleaned.split(".");
@@ -40,6 +35,17 @@ const getTodayDate = () => {
   return new Date().toLocaleDateString('sv-SE');
 };
 
+// Flyttad utanför för att undvika onödiga re-renders
+const initialRowState = {
+  date: getTodayDate(),
+  description: "",
+  hours: "",
+  hourPrice: "0",
+  cars: "0",
+  carCost: "0",
+  markup: "0",
+};
+
 const CostsHeader = React.memo(({ 
   totalSum, 
   entryCount, 
@@ -47,9 +53,15 @@ const CostsHeader = React.memo(({
   setNewRow, 
   saveEntry, 
   editingIndex, 
-  setEditingIndex, 
-  initialRowState 
+  setEditingIndex 
 }) => {
+  
+  // 🔑 FIX FÖR DISAPPEARING TEXT: Tvinga stor bokstav direkt i inmatningen
+  const handleDescriptionChange = (v) => {
+    const formatted = v.length > 0 ? v.charAt(0).toUpperCase() + v.slice(1) : v;
+    setNewRow(s => ({ ...s, description: formatted }));
+  };
+
   return (
     <>
       <View style={styles.summaryCard}>
@@ -84,9 +96,12 @@ const CostsHeader = React.memo(({
               <TextInput
                 placeholder="Vad har gjorts?"
                 value={newRow.description}
-                onChangeText={(v) => setNewRow(s => ({ ...s, description: v }))}
+                // 🔑 Här är fixen: handleDescriptionChange istället för direkt v
+                onChangeText={handleDescriptionChange}
                 style={styles.input}
                 placeholderTextColor="#BBB"
+                autoCapitalize="sentences" // Hjälper mobilen att förstå förväntat format
+                blurOnSubmit={false}
               />
            </View>
         </View>
@@ -132,11 +147,9 @@ const CostsHeader = React.memo(({
             />
           </View>
           <View style={styles.inputGroup}>
-            {/* 🔑 ÄNDRAD TILL PÅSLAG % */}
             <Text style={styles.miniLabel}>PÅSLAG (%)</Text>
             <TextInput 
               keyboardType="decimal-pad" 
-              placeholder="25"
               value={newRow.markup} 
               onChangeText={v => setNewRow(s => ({...s, markup: decimalOnly(v)}))} 
               style={styles.input} 
@@ -177,17 +190,6 @@ export default function KostnaderScreen({ navigation, route }) {
   }, [projects, projectId, selectedProject]);
 
   const [entries, setEntries] = useState([]);
-
-  const initialRowState = {
-    date: getTodayDate(),
-    description: "",
-    hours: "",
-    hourPrice: "0",
-    cars: "0",
-    carCost: "0",
-    markup: "0", // Procentsats
-  };
-
   const [newRow, setNewRow] = useState(initialRowState);
   const [editingIndex, setEditingIndex] = useState(null);
 
@@ -213,13 +215,11 @@ export default function KostnaderScreen({ navigation, route }) {
     const bc = parseFloat(newRow.carCost) || 0;
     const mPercent = parseFloat(newRow.markup) || 0;
 
-    // 🔑 NY KALKYL: (Tid + Bil) * Påslag
     const baseTotal = (h * hp) + (b * bc);
     const rowTotal = baseTotal * (1 + (mPercent / 100));
 
     const item = {
       ...newRow,
-      description: capitalizeFirst(newRow.description.trim()),
       hours: h,
       hourPrice: hp,
       cars: b,
@@ -270,7 +270,7 @@ export default function KostnaderScreen({ navigation, route }) {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
-      <AppHeader title="KOSTNADER & TID" subTitle={project.name} navigation={navigation} />
+      <AppHeader title="KOSTNADER & TID" subTitle={project?.name} navigation={navigation} />
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <FlatList
@@ -287,7 +287,6 @@ export default function KostnaderScreen({ navigation, route }) {
               saveEntry={saveEntry}
               editingIndex={editingIndex}
               setEditingIndex={setEditingIndex}
-              initialRowState={initialRowState}
             />
           }
           renderItem={({ item, index }) => (

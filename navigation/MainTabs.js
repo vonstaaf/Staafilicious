@@ -101,7 +101,7 @@ export default function MainTabs() {
 const styles = StyleSheet.create({
   headerLogo: {
     width: 140,
-    height: 40,
+    height: 140,
     ...Platform.select({ android: { marginBottom: 5 } }),
   },
 });

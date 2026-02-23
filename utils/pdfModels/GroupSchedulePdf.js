@@ -1,6 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // 🔑 NYTT: Hämtar lokala minnet
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBase64Image } from '../imageHelpers';
 
 const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
@@ -21,15 +21,23 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
   try {
     const company = companyData || {};
     
-    // 1. App-loggan
-    const appLogo = await getBase64Image(APP_LOGO_URL);
+    // 1. App-loggan (Kraschsäker)
+    let appLogo = null;
+    try { appLogo = await getBase64Image(APP_LOGO_URL); } catch(e){}
     
-    // 2. 🔑 NYTT: Skottsäker hämtning av Företagsloggan
+    // 2. 🔑 KRACHSÄKER hämtning av Företagsloggan
     let logoToUse = company.logoUrl;
     if (!logoToUse) {
-      logoToUse = await AsyncStorage.getItem('@company_logo'); // Leta lokalt om molnet är tomt
+      logoToUse = await AsyncStorage.getItem('@company_logo'); 
     }
-    const companyLogo = logoToUse ? await getBase64Image(logoToUse) : null;
+    let companyLogo = null;
+    if (logoToUse) {
+      try {
+        companyLogo = await getBase64Image(logoToUse);
+      } catch (e) {
+        console.log("Trasig cache-logga upptäckt. Hoppar över bilden för att förhindra krasch.");
+      }
+    }
     
     // 3. Företagsnamn
     const cName = company.companyName || company.name || "";
@@ -40,27 +48,71 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
     const pageSize = scheduleData.pageSize || "A4";
     const isA5 = pageSize === "A5";
     
-    // Rader och höjd
-    const rowsPerCol = isA5 ? 20 : 36; 
+    // 🔑 DYNAMISK KALKYLATOR: Rader och höjd
+    const NORMAL_ROWS_PER_COL = isA5 ? 20 : 36; 
+    const JFB_ROWS_PER_COL = isA5 ? 12 : 26; // Kortare tabell för att ge plats åt JFB i botten
+    
+    const NORMAL_MAX = NORMAL_ROWS_PER_COL * 2;
+    const JFB_MAX = JFB_ROWS_PER_COL * 2;
     const rowHeight = isA5 ? 28 : 24; 
-    const rowsPerPage = rowsPerCol * 2;
 
     const pages = [];
-    for (let i = 0; i < Math.max(rows.length, 1); i += rowsPerPage) {
-      pages.push(rows.slice(i, i + rowsPerPage));
+    let remainingRows = [...rows];
+    if (remainingRows.length === 0) remainingRows.push({ id: "", label: "", current: "", area: "" });
+
+    // Dela upp raderna smart
+    while (remainingRows.length > 0) {
+        if (remainingRows.length > NORMAL_MAX) {
+            // Sidan är full, ta max rader och skicka resten till nästa loop
+            pages.push({
+                rows: remainingRows.splice(0, NORMAL_MAX),
+                showJfbHere: false,
+                rowsPerCol: NORMAL_ROWS_PER_COL
+            });
+        } else {
+            // Detta är sista omgången rader! Får JFB plats?
+            if (showJfb) {
+                if (remainingRows.length <= JFB_MAX) {
+                    // Ja! Raderna får plats ovanför JFB-rutan.
+                    pages.push({
+                        rows: remainingRows.splice(0, remainingRows.length),
+                        showJfbHere: true,
+                        rowsPerCol: JFB_ROWS_PER_COL
+                    });
+                } else {
+                    // Nej. Raderna tar för mycket plats. Vi fyller denna sida och lägger JFB på en ny sida.
+                    pages.push({
+                        rows: remainingRows.splice(0, remainingRows.length),
+                        showJfbHere: false,
+                        rowsPerCol: NORMAL_ROWS_PER_COL
+                    });
+                    pages.push({
+                        rows: [], // En helt tom tabell men med JFB
+                        showJfbHere: true,
+                        rowsPerCol: JFB_ROWS_PER_COL
+                    });
+                }
+            } else {
+                pages.push({
+                    rows: remainingRows.splice(0, remainingRows.length),
+                    showJfbHere: false,
+                    rowsPerCol: NORMAL_ROWS_PER_COL
+                });
+            }
+        }
     }
 
     const htmlContent = `
       <html>
         <head>
           <style>
-            @page { size: ${pageSize} portrait; margin: 0; }
+            @page { size: ${pageSize} portrait; margin: 8mm; }
             body { font-family: Helvetica, Arial, sans-serif; margin: 0; padding: 0; background: #fff; }
             
             .page { 
               width: 210mm; 
               height: 297mm; 
-              padding: 15mm; 
+              padding: 5mm; 
               page-break-after: always; 
               display: flex; 
               flex-direction: column; 
@@ -68,7 +120,7 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
               position: relative;
             }
             
-            ${isA5 ? '.page { width: 148mm; height: 210mm; padding: 10mm; }' : ''}
+            ${isA5 ? '.page { width: 148mm; height: 210mm; padding: 0mm; }' : ''}
 
             table { width: 100%; border-collapse: collapse; table-layout: fixed; }
             
@@ -93,13 +145,15 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
             
             .data-table th { background: #eee; font-weight: bold; text-align: center; }
 
-            .jfb-box {
-              font-size: 9px;
-              line-height: 1.2;
-              padding: 8px;
+            /* 🔑 NY STYLING FÖR FULLBREDDS-JFB */
+            .jfb-container {
+              margin-top: 15px;
+              padding: 12px;
+              border: 1px solid #000;
               background-color: #f9f9f9;
-              white-space: normal;
-              vertical-align: top;
+              font-size: 10px;
+              line-height: 1.4;
+              border-radius: 2px;
             }
 
             .footer {
@@ -113,34 +167,13 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
           </style>
         </head>
         <body>
-          ${pages.map((pageRows, index) => {
-            const left = pageRows.slice(0, rowsPerCol);
-            let right = pageRows.slice(rowsPerCol);
+          ${pages.map((pageData, index) => {
+            const left = pageData.rows.slice(0, pageData.rowsPerCol);
+            let right = pageData.rows.slice(pageData.rowsPerCol, pageData.rowsPerCol * 2);
             
-            while (left.length < rowsPerCol) left.push({ id: "", label: "", current: "", area: "" });
-            while (right.length < rowsPerCol) right.push({ id: "", label: "", current: "", area: "" });
-
-            let jfbHtml = "";
-            const isLastPage = index === pages.length - 1;
-
-            if (showJfb && isLastPage) {
-                let emptyCount = 0;
-                for (let i = right.length - 1; i >= 0; i--) {
-                    if (!right[i].label && !right[i].current) emptyCount++;
-                    else break;
-                }
-
-                if (emptyCount >= 10) {
-                    const keepCount = rowsPerCol - emptyCount;
-                    right = right.slice(0, keepCount);
-                    jfbHtml = `
-                      <tr>
-                        <td colspan="4" class="jfb-box" style="height: auto; border: 1px solid #000;">
-                          ${JFB_TEXT}
-                        </td>
-                      </tr>`;
-                }
-            }
+            // Fyll ut med tomma rader så tabellen alltid är exakt lika hög
+            while (left.length < pageData.rowsPerCol) left.push({ id: "", label: "", current: "", area: "" });
+            while (right.length < pageData.rowsPerCol) right.push({ id: "", label: "", current: "", area: "" });
 
             return `
               <div class="page">
@@ -152,9 +185,11 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                     <td style="width: 40%; text-align: center;">
                       ${companyLogo ? `<img src="${companyLogo}" class="logo-img" style="margin: 0 auto;"/>` : `<strong>${cName}</strong>`}
                     </td>
-                    <td style="width: 30%; text-align: right; font-size: 10px;">
+                    <td style="width: 30%; text-align: right; font-size: 8px; line-height: 1.2;">
                       <strong>${cName}</strong><br/>
                       ${company.orgNr ? `Org.nr: ${company.orgNr}<br/>` : ""}
+                      ${company.address || ""}<br/>
+                      ${company.zipCity || ""}<br/>
                       ${company.phone || ""}
                     </td>
                   </tr>
@@ -217,10 +252,15 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                           <td style="text-align:center;">${r.current}</td>
                           <td style="text-align:center;">${r.area}</td>
                         </tr>`).join('')}
-                      ${jfbHtml}
                     </tbody>
                   </table>
                 </div>
+
+                ${pageData.showJfbHere ? `
+                  <div class="jfb-container">
+                    ${JFB_TEXT}
+                  </div>
+                ` : ''}
 
                 <div class="footer">
                   <span>Vid fel ring: ${cName} | ${company.phone || ""}</span>

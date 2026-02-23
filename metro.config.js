@@ -1,15 +1,15 @@
-const { getDefaultConfig } = require("@expo/metro-config");
+const { getSentryExpoConfig } = require("@sentry/react-native/metro");
 
-const {
-  getSentryExpoConfig
-} = require("@sentry/react-native/metro");
-
+/** @type {import('expo/metro-config').MetroConfig} */
 const config = getSentryExpoConfig(__dirname);
 
 // 1. Lägg till stöd för Firebase JS SDK (.mjs filer)
-config.resolver.sourceExts.push("mjs");
+// Vi kollar först så att den inte redan finns för att undvika dubbletter
+if (!config.resolver.sourceExts.includes("mjs")) {
+  config.resolver.sourceExts.push("mjs");
+}
 
-// 2. Säkerställ att SVG eller andra specifika tillägg hanteras om du lägger till dem senare
-// config.resolver.assetExts.push("glb", "gltf", "png", "jpg");
+// 2. Om du använder SVG:er i framtiden via react-native-svg-transformer 
+// kan du lägga till logik för det här, men just nu räcker detta.
 
 module.exports = config;
