@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system/legacy'; // 🔑 Uppdaterad för att ta bort varningsmeddelandet i SDK 54
+import * as FileSystem from 'expo-file-system'; // 🔑 Uppdaterad för att ta bort varningsmeddelandet i SDK 54
 import { Asset } from 'expo-asset';
 
 /**

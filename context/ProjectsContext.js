@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect } from "react";
+import React, { createContext, useState, useEffect, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db, auth } from "../firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
@@ -28,8 +28,10 @@ export const ProjectsProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [companyData, setCompanyData] = useState(null);
   
-  // 🔑 NYTT: Hela materialregistret sparas här för blixtsnabb sökning
+  // 🔑 MATERIAL, RABATTER & MALLAR
   const [allProducts, setAllProducts] = useState([]);
+  const [discountAgreements, setDiscountAgreements] = useState({});
+  const [inspectionTemplate, setInspectionTemplate] = useState([]); // 🔑 Din Master-mall
 
   const generateProjectCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -73,7 +75,9 @@ export const ProjectsProvider = ({ children }) => {
 
   useEffect(() => {
     let unsubscribeSnapshot = null;
-    let unsubscribeProducts = null; // 🔑 Lyssnare för materialregistret
+    let unsubscribeProducts = null; 
+    let unsubscribeDiscounts = null;
+    let unsubscribeTemplate = null; // 🔑 Lyssnare för Master-mallen
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user || null);
@@ -81,10 +85,14 @@ export const ProjectsProvider = ({ children }) => {
         setProjects([]);
         setSelectedProjectState(null);
         setCompanyData(null);
-        setAllProducts([]); // Rensa material vid utloggning
+        setAllProducts([]);
+        setDiscountAgreements({});
+        setInspectionTemplate([]); // Rensa vid utloggning
         setLoading(false);
         if (unsubscribeSnapshot) unsubscribeSnapshot();
         if (unsubscribeProducts) unsubscribeProducts();
+        if (unsubscribeDiscounts) unsubscribeDiscounts();
+        if (unsubscribeTemplate) unsubscribeTemplate();
         return;
       }
 
@@ -126,8 +134,7 @@ export const ProjectsProvider = ({ children }) => {
         setLoading(false);
       });
 
-      // 🔑 3. NYTT: Lyssna på det globala materialregistret (bakgrundssynk)
-      // Vi antar att din samling för allt material heter "products"
+      // 3. Lyssna på det globala materialregistret
       const productsQuery = query(collection(db, "products"));
       unsubscribeProducts = onSnapshot(productsQuery, (snap) => {
         const pData = snap.docs.map(d => ({
@@ -135,9 +142,35 @@ export const ProjectsProvider = ({ children }) => {
           ...d.data()
         }));
         setAllProducts(pData);
-        console.log(`✅ Synkade ${pData.length} artiklar till minnet.`);
       }, (err) => {
         console.error("Fel vid materialsynk:", err);
+      });
+
+      // 4. Lyssna på Rabattbrev
+      const discountRef = doc(db, "userDiscounts", user.uid);
+      unsubscribeDiscounts = onSnapshot(discountRef, (snap) => {
+        if (snap.exists()) {
+          const rawData = snap.data().data;
+          if (typeof rawData === 'string') {
+            try {
+              const parsed = JSON.parse(rawData);
+              setDiscountAgreements(parsed);
+            } catch (e) {
+              console.error("Kunde inte tolka rabattdata:", e);
+            }
+          } else if (snap.data().agreements) {
+            setDiscountAgreements(snap.data().agreements);
+          }
+        }
+      });
+
+      // 🔑 5. NYTT: Lyssna på Master-mallen för Egenkontroller
+      const templateRef = doc(db, "users", user.uid, "settings", "inspectionTemplate");
+      unsubscribeTemplate = onSnapshot(templateRef, (snap) => {
+        if (snap.exists()) {
+          setInspectionTemplate(snap.data().items || []);
+          console.log("✅ Master-mall för egenkontroller laddad.");
+        }
       });
     });
 
@@ -145,6 +178,8 @@ export const ProjectsProvider = ({ children }) => {
       unsubscribeAuth();
       if (unsubscribeSnapshot) unsubscribeSnapshot();
       if (unsubscribeProducts) unsubscribeProducts();
+      if (unsubscribeDiscounts) unsubscribeDiscounts();
+      if (unsubscribeTemplate) unsubscribeTemplate();
     };
   }, []);
 
@@ -180,22 +215,20 @@ export const ProjectsProvider = ({ children }) => {
     const formattedName = cleanProjectName(name);
     const codeToUse = code ? code.toString().toUpperCase().trim() : generateProjectCode();
     
-    let templateToUse = [];
-    try {
-      const templateRef = doc(db, "users", auth.currentUser.uid, "settings", "inspectionTemplate");
-      const templateSnap = await getDoc(templateRef);
-      
-      if (templateSnap.exists()) {
-        templateToUse = templateSnap.data().items || [];
-      } else {
-         const userRef = doc(db, "users", auth.currentUser.uid);
-         const userSnap = await getDoc(userRef);
-         if (userSnap.exists() && userSnap.data().defaultInspectionTemplate) {
-            templateToUse = userSnap.data().defaultInspectionTemplate;
-         }
-      }
-    } catch (err) {
-      console.log("Kunde inte hämta standardmall:", err);
+    // 🔑 Använd Master-mallen från state om den finns
+    let templateToUse = inspectionTemplate.length > 0 ? inspectionTemplate : [];
+
+    // Om state är tomt, gör en sista koll i databasen (säkerhetsåtgärd)
+    if (templateToUse.length === 0) {
+        try {
+          const templateRef = doc(db, "users", auth.currentUser.uid, "settings", "inspectionTemplate");
+          const templateSnap = await getDoc(templateRef);
+          if (templateSnap.exists()) {
+            templateToUse = templateSnap.data().items || [];
+          }
+        } catch (err) {
+          console.log("Kunde inte hämta standardmall:", err);
+        }
     }
 
     const newProjectData = {
@@ -280,7 +313,9 @@ export const ProjectsProvider = ({ children }) => {
         loading,
         companyData,
         saveInspectionTemplate,
-        allProducts // 🔑 Exponerar materialregistret till alla skärmar
+        allProducts,
+        discountAgreements,
+        inspectionTemplate // 🔑 Exponerad för inställningssidan
       }}
     >
       {children}

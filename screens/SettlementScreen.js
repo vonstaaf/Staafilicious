@@ -22,13 +22,10 @@ import { doc, onSnapshot } from "firebase/firestore";
 // 🔑 NYTT: Importera båda PDF-funktionerna
 import { handleCustomerPdf, handleMaterialPdf } from "../utils/pdfActions";
 
-// Hjälpfunktion för att formatera valuta
-const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('sv-SE', {
-    style: 'currency',
-    currency: 'SEK',
-    maximumFractionDigits: 0,
-  }).format(amount || 0);
+// 🔑 ENHETLIG FORMATERING (samma som i ProductsScreen)
+const formatNumber = (n) => {
+  if (n === null || n === undefined || isNaN(n)) return "0,00";
+  return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 };
 
 export default function SettlementScreen({ navigation, route }) {
@@ -82,7 +79,7 @@ export default function SettlementScreen({ navigation, route }) {
   const onGenerateCustomerPdf = async () => {
     setIsGeneratingCustomer(true);
     try {
-      await handleCustomerPdf(project, companyData); // 🔑 Nu skickar vi in rätt info!
+      await handleCustomerPdf(project, companyData); 
     } catch (error) {
       console.log("PDF Error:", error);
       Alert.alert("Fel", "Kunde inte skapa kundunderlag.");
@@ -99,7 +96,7 @@ export default function SettlementScreen({ navigation, route }) {
     }
     setIsGeneratingMaterial(true);
     try {
-      await handleMaterialPdf(project, companyData); // 🔑 Nu skickar vi in rätt info!
+      await handleMaterialPdf(project, companyData); 
     } catch (error) {
       console.log("PDF Error:", error);
       Alert.alert("Fel", "Kunde inte skapa materialspecifikation.");
@@ -129,7 +126,7 @@ export default function SettlementScreen({ navigation, route }) {
           <View style={styles.mainRow}>
             <View>
               <Text style={styles.mainLabel}>BERÄKNAD VINST</Text>
-              <Text style={styles.mainValue}>{formatCurrency(totals.profit)}</Text>
+              <Text style={styles.mainValue}>{formatNumber(totals.profit)} kr</Text>
             </View>
             <View style={styles.marginBadge}>
               <Text style={styles.marginText}>{totals.margin.toFixed(1)}%</Text>
@@ -150,16 +147,16 @@ export default function SettlementScreen({ navigation, route }) {
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Faktureras kund:</Text>
-            <Text style={styles.value}>{formatCurrency(totals.materialOut)}</Text>
+            <Text style={styles.value}>{formatNumber(totals.materialOut)} kr</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Inköpskostnad:</Text>
-            <Text style={[styles.value, { color: '#E53935' }]}>- {formatCurrency(totals.materialIn)}</Text>
+            <Text style={[styles.value, { color: '#E53935' }]}>- {formatNumber(totals.materialIn)} kr</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.row}>
             <Text style={styles.labelBold}>Materialvinst:</Text>
-            <Text style={styles.valueBold}>{formatCurrency(totals.materialOut - totals.materialIn)}</Text>
+            <Text style={styles.valueBold}>{formatNumber(totals.materialOut - totals.materialIn)} kr</Text>
           </View>
         </View>
 
@@ -171,7 +168,7 @@ export default function SettlementScreen({ navigation, route }) {
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Totalt att fakturera:</Text>
-            <Text style={styles.value}>{formatCurrency(totals.costs)}</Text>
+            <Text style={styles.value}>{formatNumber(totals.costs)} kr</Text>
           </View>
           <Text style={styles.hintText}>Inkluderar alla rader från kostnadsloggen.</Text>
         </View>
@@ -181,7 +178,7 @@ export default function SettlementScreen({ navigation, route }) {
           <View style={styles.row}>
             <Text style={[styles.label, { color: '#AAA' }]}>TOTALT ATT FAKTURERA (EXKL. MOMS)</Text>
           </View>
-          <Text style={styles.totalValueLarge}>{formatCurrency(totals.totalOut)}</Text>
+          <Text style={styles.totalValueLarge}>{formatNumber(totals.totalOut)} kr</Text>
         </View>
 
       </ScrollView>

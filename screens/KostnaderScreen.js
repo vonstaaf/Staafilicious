@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState, useMemo, useCallback } from "react";
+import React, { useContext, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -35,7 +35,6 @@ const getTodayDate = () => {
   return new Date().toLocaleDateString('sv-SE');
 };
 
-// Flyttad utanför för att undvika onödiga re-renders
 const initialRowState = {
   date: getTodayDate(),
   description: "",
@@ -46,6 +45,7 @@ const initialRowState = {
   markup: "0",
 };
 
+// --- MEMOISERAD HEADER ---
 const CostsHeader = React.memo(({ 
   totalSum, 
   entryCount, 
@@ -56,7 +56,6 @@ const CostsHeader = React.memo(({
   setEditingIndex 
 }) => {
   
-  // 🔑 FIX FÖR DISAPPEARING TEXT: Tvinga stor bokstav direkt i inmatningen
   const handleDescriptionChange = (v) => {
     const formatted = v.length > 0 ? v.charAt(0).toUpperCase() + v.slice(1) : v;
     setNewRow(s => ({ ...s, description: formatted }));
@@ -96,11 +95,10 @@ const CostsHeader = React.memo(({
               <TextInput
                 placeholder="Vad har gjorts?"
                 value={newRow.description}
-                // 🔑 Här är fixen: handleDescriptionChange istället för direkt v
                 onChangeText={handleDescriptionChange}
                 style={styles.input}
                 placeholderTextColor="#BBB"
-                autoCapitalize="sentences" // Hjälper mobilen att förstå förväntat format
+                autoCapitalize="sentences"
                 blurOnSubmit={false}
               />
            </View>
@@ -189,17 +187,11 @@ export default function KostnaderScreen({ navigation, route }) {
     return projects.find(p => p.id === projectId) || selectedProject;
   }, [projects, projectId, selectedProject]);
 
-  const [entries, setEntries] = useState([]);
   const [newRow, setNewRow] = useState(initialRowState);
   const [editingIndex, setEditingIndex] = useState(null);
 
-  useEffect(() => {
-    if (project?.kostnader) {
-      setEntries(project.kostnader);
-    } else {
-      setEntries([]);
-    }
-  }, [project]);
+  // 🔑 Hämta kostnader direkt från projektet för 100% synk i realtid
+  const currentKostnader = useMemo(() => project?.kostnader || [], [project]);
 
   if (!project) return null;
 
@@ -228,9 +220,12 @@ export default function KostnaderScreen({ navigation, route }) {
       total: rowTotal,
     };
 
-    const currentList = project.kostnader || [];
-    let updated = editingIndex !== null ? [...currentList] : [item, ...currentList];
-    if (editingIndex !== null) updated[editingIndex] = item;
+    let updated = [...currentKostnader];
+    if (editingIndex !== null) {
+      updated[editingIndex] = item;
+    } else {
+      updated = [item, ...updated];
+    }
 
     try {
       await updateProject(project.id, { kostnader: updated });
@@ -243,14 +238,26 @@ export default function KostnaderScreen({ navigation, route }) {
   };
 
   const deleteEntry = (index) => {
-    Alert.alert("Radera?", "Vill du ta bort raderingen?", [
-      { text: "Avbryt" },
-      { text: "Radera", style: "destructive", onPress: async () => {
-          const updated = (project.kostnader || []).filter((_, i) => i !== index);
-          await updateProject(project.id, { kostnader: updated });
+    const itemToDelete = currentKostnader[index];
+    Alert.alert(
+      "Radera radering?", 
+      `Vill du ta bort "${itemToDelete.description}"?`, 
+      [
+        { text: "Avbryt", style: "cancel" },
+        { 
+          text: "Radera", 
+          style: "destructive", 
+          onPress: async () => {
+            const updated = currentKostnader.filter((_, i) => i !== index);
+            try {
+              await updateProject(project.id, { kostnader: updated });
+            } catch (e) {
+              Alert.alert("Fel", "Kunde inte radera.");
+            }
+          }
         }
-      }
-    ]);
+      ]
+    );
   };
 
   const startEdit = (item, index) => {
@@ -265,7 +272,9 @@ export default function KostnaderScreen({ navigation, route }) {
     setEditingIndex(index);
   };
 
-  const totalSum = entries.reduce((acc, it) => acc + (parseFloat(it.total) || 0), 0);
+  const totalSum = useMemo(() => {
+    return currentKostnader.reduce((acc, it) => acc + (parseFloat(it.total) || 0), 0);
+  }, [currentKostnader]);
 
   return (
     <View style={styles.container}>
@@ -274,14 +283,14 @@ export default function KostnaderScreen({ navigation, route }) {
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <FlatList
-          data={entries}
+          data={currentKostnader}
           keyExtractor={(_, i) => i.toString()}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 100 }}
           ListHeaderComponent={
             <CostsHeader 
               totalSum={totalSum}
-              entryCount={entries.length}
+              entryCount={currentKostnader.length}
               newRow={newRow}
               setNewRow={setNewRow}
               saveEntry={saveEntry}
@@ -294,9 +303,13 @@ export default function KostnaderScreen({ navigation, route }) {
               <View style={styles.entryMain}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.entryDesc}>{item.description}</Text>
+                  
+                  {/* 🔑 Formaterar timpris och visar bilar om de finns */}
                   <Text style={styles.entrySub}>
-                    {item.date} • {item.hours}h ({item.hourPrice}:-) • {item.markup}% påslag
+                    {item.date} • {item.hours}h ({formatNumber(item.hourPrice)} kr/h) • {item.markup}% påslag
+                    {item.cars > 0 ? `\n${item.cars} bil(ar) (${formatNumber(item.carCost)} kr/st)` : ""}
                   </Text>
+                  
                 </View>
                 <View style={styles.entryPriceArea}>
                   <Text style={styles.entryTotal}>{formatNumber(item.total)}:-</Text>
@@ -345,7 +358,7 @@ const styles = StyleSheet.create({
   entryCard: { backgroundColor: '#FFF', borderRadius: 20, marginBottom: 12, borderWidth: 1, borderColor: '#F0F0F0' },
   entryMain: { flexDirection: 'row', padding: 18, alignItems: 'center' },
   entryDesc: { fontSize: 15, fontWeight: '800', color: '#1C1C1E' },
-  entrySub: { fontSize: 11, color: '#AAA', marginTop: 4 },
+  entrySub: { fontSize: 11, color: '#AAA', marginTop: 4, lineHeight: 16 },
   entryPriceArea: { alignItems: 'flex-end', marginLeft: 10 },
   entryTotal: { fontSize: 16, fontWeight: '900', color: '#1C1C1E' },
   entryExclVat: { fontSize: 9, color: '#CCC', fontWeight: '800', marginTop: 2 },

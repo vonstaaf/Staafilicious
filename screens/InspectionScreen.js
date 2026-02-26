@@ -31,6 +31,18 @@ const capitalizeFirst = (text) => {
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
+// Hjälpfunktion för att visa rätt symbol baserat på enhetsnamn
+const getUnitSymbol = (unit) => {
+  switch (unit) {
+    case 'MegaOhm': return 'MΩ';
+    case 'Ohm': return 'Ω';
+    case 'Meter': return 'm';
+    case 'mA': return 'mA';
+    case 'kA': return 'kA';
+    default: return unit;
+  }
+};
+
 // 🔑 MEMOISERAD STORY ITEM: Förhindrar tangentbords-lag och fokus-buggar
 const InspectionStoryItem = React.memo(({ 
   item, checks, setStatus, rowComments, setRowComments, images, takePhoto, persistData 
@@ -40,6 +52,8 @@ const InspectionStoryItem = React.memo(({
   const handleCommentChange = (t) => {
     setRowComments(prev => ({ ...prev, [item.id]: t }));
   };
+
+  const unitSymbol = getUnitSymbol(item.unit);
 
   return (
     <ScrollView contentContainerStyle={styles.storyContent} keyboardShouldPersistTaps="handled">
@@ -80,15 +94,22 @@ const InspectionStoryItem = React.memo(({
           </TouchableOpacity>
         </View>
 
-        <TextInput 
-          style={styles.storyComment} 
-          placeholder="Mätvärden eller noteringar..." 
-          multiline
-          value={rowComments[item.id] || ""}
-          onChangeText={handleCommentChange}
-          onBlur={() => persistData({ inspectionRowComments: rowComments })}
-          placeholderTextColor="#BBB"
-        />
+        <View style={styles.inputWrapper}>
+          <TextInput 
+            style={styles.storyComment} 
+            placeholder={item.unit ? `Ange värde i ${unitSymbol}...` : "Mätvärden eller noteringar..."} 
+            multiline
+            value={rowComments[item.id] || ""}
+            onChangeText={handleCommentChange}
+            onBlur={() => persistData({ inspectionRowComments: rowComments })}
+            placeholderTextColor="#BBB"
+          />
+          {item.unit ? (
+            <View style={styles.unitBadge}>
+              <Text style={styles.unitBadgeText}>{unitSymbol}</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.miniGallery}>
@@ -167,8 +188,6 @@ export default function InspectionScreen({ route, navigation }) {
       setInspectionSubtitle(data.description || "");
     } 
     else if (project) {
-      // Vi uppdaterar bara om vi inte är mitt i en Story-mode inmatning 
-      // för att undvika att cursor hoppar
       setItems(project.inspectionItems || []);
       setChecks(project.currentInspections || {});
       setRowComments(project.currentInspectionRowComments || {});
@@ -277,14 +296,14 @@ export default function InspectionScreen({ route, navigation }) {
 
   // Mall-funktioner
   const addNewSection = () => { 
-    const n = [...items, {id: "s"+Date.now(), label: "Ny punkt", section: "Ny Kategori", desc: ""}]; 
+    const n = [...items, {id: "s"+Date.now(), label: "Ny punkt", section: "Ny Kategori", desc: "", unit: ""}]; 
     setItems(n); persistData({inspectionItems: n}); 
   };
   const removeSection = (sec) => { 
     const n = items.filter(i => i.section !== sec); setItems(n); persistData({inspectionItems: n}); 
   };
   const addNewItem = (sec) => { 
-    const n = [...items, {id: "i"+Date.now(), label: "Ny punkt", section: sec, desc: ""}]; setItems(n); persistData({inspectionItems: n}); 
+    const n = [...items, {id: "i"+Date.now(), label: "Ny punkt", section: sec, desc: "", unit: ""}]; setItems(n); persistData({inspectionItems: n}); 
   };
   const removeItem = (id) => { 
     const n = items.filter(i => i.id !== id); setItems(n); persistData({inspectionItems: n}); 
@@ -480,6 +499,9 @@ const styles = StyleSheet.create({
   storyBtnFail: { backgroundColor: '#FF3B30', borderColor: '#FF3B30' },
   storyBtnText: { fontSize: 10, fontWeight: '900', marginTop: 10, color: '#AAA' },
   storyComment: { backgroundColor: '#F5F5F7', padding: 18, borderRadius: 18, fontSize: 15, minHeight: 120, textAlignVertical: 'top', fontWeight: '600', color: '#333' },
+  inputWrapper: { position: 'relative' },
+  unitBadge: { position: 'absolute', right: 15, top: 15, backgroundColor: '#E5E5EA', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  unitBadgeText: { fontSize: 12, fontWeight: '900', color: '#8E8E93' },
   navRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 15 },
   navBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 20, backgroundColor: '#FFF', elevation: 2, gap: 10, justifyContent: 'center' },
   navText: { fontWeight: '900', fontSize: 13, color: '#1C1C1E', letterSpacing: 0.5 },

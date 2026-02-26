@@ -1,9 +1,21 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // 🔑 NYTT: Hämtar lokala minnet
+import AsyncStorage from '@react-native-async-storage/async-storage'; 
 import { getBase64Image } from '../imageHelpers';
 
 const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
+
+// Hjälpfunktion för att mappa enhetsnamn till symboler i PDF:en
+const getUnitSymbol = (unit) => {
+  switch (unit) {
+    case 'MegaOhm': return 'MΩ';
+    case 'Ohm': return 'Ω';
+    case 'Meter': return 'm';
+    case 'mA': return 'mA';
+    case 'kA': return 'kA';
+    default: return unit || "";
+  }
+};
 
 export const handleInspectionPdf = async (project, inspection, companyData) => {
   try {
@@ -12,16 +24,16 @@ export const handleInspectionPdf = async (project, inspection, companyData) => {
     // 1. App-loggan (Base64)
     const appLogo = await getBase64Image(APP_LOGO_URL);
     
-    // 2. 🔑 NYTT: Skottsäker hämtning av Företagsloggan
+    // 2. Skottsäker hämtning av Företagsloggan
     let logoToUse = company.logoUrl;
     if (!logoToUse) {
-      logoToUse = await AsyncStorage.getItem('@company_logo'); // Leta lokalt om molnet är tomt
+      logoToUse = await AsyncStorage.getItem('@company_logo'); 
     }
     const companyLogo = logoToUse ? await getBase64Image(logoToUse) : null;
     
     const cName = company.companyName || company.name || "";
     
-    // 3. Bearbeta inspektionsbilder (Base64) - Säkerställer att de visas
+    // 3. Bearbeta inspektionsbilder (Base64)
     const processedImages = await Promise.all(
       (inspection.images || []).map(async (img) => {
         const b64 = await getBase64Image(img);
@@ -32,7 +44,6 @@ export const handleInspectionPdf = async (project, inspection, companyData) => {
     const allItems = inspection.items || [];
     const sections = [...new Set(allItems.map(i => i.section))];
     
-    // Formatera datumet snyggt
     const dateStr = inspection.date 
       ? new Date(inspection.date).toLocaleDateString('sv-SE') 
       : new Date().toLocaleDateString('sv-SE');
@@ -97,21 +108,28 @@ export const handleInspectionPdf = async (project, inspection, companyData) => {
               return `
                <div class="section-title">${sec.toUpperCase()}</div>
                <table class="data">
-                 <thead><tr><th>Kontrollpunkt</th><th style="width:50px; text-align:center;">Status</th><th>Notering</th></tr></thead>
+                 <thead><tr><th>Kontrollpunkt</th><th style="width:50px; text-align:center;">Status</th><th>Notering / Mätvärde</th></tr></thead>
                  <tbody>
                    ${sectionItems.map(i => {
                      const statusVal = inspection.checks?.[i.id];
                      let statusText = '-';
                      if (statusVal === 'checked') statusText = 'OK';
                      if (statusVal === 'na') statusText = 'E/A';
+                     if (statusVal === 'fail') statusText = 'FEL';
                      
-                     const comment = inspection.rowComments?.[i.id] || "";
+                     const rawComment = inspection.rowComments?.[i.id] || "";
+                     const unitSymbol = getUnitSymbol(i.unit);
+                     
+                     // Kombinera mätvärde med enhet om enhet finns, annars visa bara kommentaren
+                     const displayValue = (rawComment && unitSymbol) 
+                        ? `${rawComment} ${unitSymbol}` 
+                        : rawComment;
                      
                      return `
                        <tr>
                          <td>${i.label}</td>
-                         <td style="text-align:center; font-weight:bold; color: ${statusText === 'OK' ? '#2e7d32' : '#333'};">${statusText}</td>
-                         <td>${comment}</td>
+                         <td style="text-align:center; font-weight:bold; color: ${statusText === 'OK' ? '#2e7d32' : statusText === 'FEL' ? '#d32f2f' : '#333'};">${statusText}</td>
+                         <td>${displayValue}</td>
                        </tr>`;
                    }).join('')}
                  </tbody>

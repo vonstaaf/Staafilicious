@@ -23,6 +23,7 @@ import CableScreen from "../screens/CableScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 import ArchivedProjectsScreen from "../screens/ArchivedProjectsScreen"; 
 import ProfileScreen from "../screens/ProfileScreen";
+import InspectionTemplateScreen from "../screens/InspectionTemplateScreen"; // 🔑 NY IMPORT
 
 const Stack = createNativeStackNavigator();
 
@@ -62,6 +63,9 @@ export default function MainStack() {
         component={SettingsScreen} 
         options={{ presentation: "card" }} 
       />
+      {/* 🔑 NY SKÄRM REGISTRERAD HÄR */}
+      <Stack.Screen name="InspectionTemplate" component={InspectionTemplateScreen} />
+      
       <Stack.Screen name="Archive" component={ArchivedProjectsScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
 

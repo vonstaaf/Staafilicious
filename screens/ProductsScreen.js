@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState, useMemo, useCallback } from "react";
+import React, { useContext, useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -37,6 +37,8 @@ const decimalOnly = (text) => {
   return cleaned;
 };
 
+const capitalizeFirst = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+
 const WHOLESALERS = [
   { id: 'local', name: 'Lager', icon: 'cube-outline' },
   { id: 'rexel', name: 'Rexel', icon: 'flash-outline' },
@@ -58,7 +60,6 @@ const ProductsHeader = React.memo(({
   initialRowState
 }) => {
 
-  // 🔑 FIX FÖR ATT TEXT INTE SKA FÖRSVINNA VID RADERING
   const handleNameChange = (v) => {
     const formatted = v.length > 0 ? v.charAt(0).toUpperCase() + v.slice(1) : v;
     setNewRow(s => ({ ...s, name: formatted }));
@@ -82,8 +83,8 @@ const ProductsHeader = React.memo(({
         <View style={styles.cardHeader}>
             <Text style={styles.sectionLabel}>{editingIndex !== null ? "REDIGERA ARTIKEL" : "SNABB-LÄGG TILL"}</Text>
             <TouchableOpacity onPress={() => setIsModalVisible(true)} style={styles.searchLink}>
-               <Ionicons name="search" size={14} color={WorkaholicTheme.colors.primary} />
-               <Text style={styles.searchLinkText}>MATERIALSÖK</Text>
+                <Ionicons name="search" size={14} color={WorkaholicTheme.colors.primary} />
+                <Text style={styles.searchLinkText}>MATERIALSÖK</Text>
             </TouchableOpacity>
         </View>
         
@@ -92,7 +93,6 @@ const ProductsHeader = React.memo(({
           <TextInput
             placeholder="T.ex. Eljo Trend Trapp"
             value={newRow.name}
-            // 🔑 Använder fixade funktionen
             onChangeText={handleNameChange}
             style={styles.inputMain}
             placeholderTextColor="#BBB"
@@ -160,18 +160,14 @@ const ProductsHeader = React.memo(({
 export default function ProductsScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   
-  // 🔑 Hämta 'projects' live
-  const { projects, selectedProject, updateProject, allProducts } = useContext(ProjectsContext);
+  // 🔑 Hämta discountAgreements från Context (de 15 000 raderna)
+  const { projects, selectedProject, updateProject, allProducts, discountAgreements } = useContext(ProjectsContext);
   
-  // 🔑 Hitta rätt projekt LIVE i listan för att UI ska uppdateras
   const projectId = route.params?.project?.id || selectedProject?.id;
   const project = useMemo(() => {
     return projects.find(p => p.id === projectId) || selectedProject;
   }, [projects, projectId, selectedProject]);
 
-  const [products, setProducts] = useState([]);
-  const [selectedWholesaler, setSelectedWholesaler] = useState('local');
-  
   const initialRowState = {
     name: "",
     articleNumber: "",
@@ -183,22 +179,15 @@ export default function ProductsScreen({ navigation, route }) {
   const [newRow, setNewRow] = useState(initialRowState);
   const [editingIndex, setEditingIndex] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [selectedWholesaler, setSelectedWholesaler] = useState('local');
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalSearchQuery, setModalSearchQuery] = useState("");
   const [modalResults, setModalResults] = useState([]);
   const [selectedInModal, setSelectedInModal] = useState([]);
 
-  // Uppdatera listan när projektet i Contextet ändras
-  useEffect(() => {
-    if (project?.products && Array.isArray(project.products)) {
-      setProducts(project.products);
-    } else {
-      setProducts([]);
-    }
-  }, [project]);
+  const currentProducts = useMemo(() => project?.products || [], [project]);
 
-  // Blixtsnabb sökning
   useEffect(() => {
     const timer = setTimeout(() => {
       if (isModalVisible) {
@@ -214,7 +203,7 @@ export default function ProductsScreen({ navigation, route }) {
       }
     }, 150);
     return () => clearTimeout(timer);
-  }, [modalSearchQuery, selectedWholesaler, allProducts]);
+  }, [modalSearchQuery, selectedWholesaler, isModalVisible, allProducts]);
 
   const performModalSearch = async (text) => {
     if (text.length < 2) {
@@ -223,7 +212,8 @@ export default function ProductsScreen({ navigation, route }) {
     }
     setIsSearching(true);
     try {
-      const results = await searchProducts(text, selectedWholesaler);
+      // 🚀 Skicka med dina 15 000 rabattgrupper till sök-motorn
+      const results = await searchProducts(text, selectedWholesaler, discountAgreements);
       setModalResults(results);
     } catch (e) { 
       console.log("Sökfel:", e); 
@@ -236,6 +226,7 @@ export default function ProductsScreen({ navigation, route }) {
     if (selectedInModal.length === 0) return;
     
     const newItems = selectedInModal.map(item => {
+      // searchProducts returnerar nu det uträknade nettopriset i 'price'
       const price = parseFloat(item.price || item.purchasePrice || 0);
       const markup = 25;
       return {
@@ -248,8 +239,6 @@ export default function ProductsScreen({ navigation, route }) {
       };
     });
 
-    // 🔑 Använd den absoluta live-datan
-    const currentProducts = project?.products || [];
     const updated = [...newItems, ...currentProducts];
     
     await updateProject(project.id, { products: updated });
@@ -278,10 +267,7 @@ export default function ProductsScreen({ navigation, route }) {
       unitPriceOutExclVat: p * (1 + m / 100),
     };
 
-    // 🔑 Använd live-listan från projektet
-    const currentProducts = project?.products || [];
     let updated = [...currentProducts];
-    
     if (editingIndex !== null) {
       updated[editingIndex] = newItem;
     } else {
@@ -298,9 +284,32 @@ export default function ProductsScreen({ navigation, route }) {
     }
   };
 
+  const deleteProduct = (index) => {
+    const itemToDelete = currentProducts[index];
+    Alert.alert(
+      "Ta bort artikel",
+      `Vill du ta bort "${itemToDelete.name}"?`,
+      [
+        { text: "Avbryt", style: "cancel" },
+        { 
+          text: "Ta bort", 
+          style: "destructive", 
+          onPress: async () => {
+            const updated = currentProducts.filter((_, i) => i !== index);
+            try {
+              await updateProject(project.id, { products: updated });
+            } catch (e) {
+              Alert.alert("Fel", "Kunde inte radera artikeln.");
+            }
+          } 
+        }
+      ]
+    );
+  };
+
   const sumTotalOut = useMemo(() => {
-    return products.reduce((acc, it) => acc + (Number(it.unitPriceOutExclVat || 0) * Number(it.quantity || 0)), 0);
-  }, [products]);
+    return currentProducts.reduce((acc, it) => acc + (Number(it.unitPriceOutExclVat || 0) * Number(it.quantity || 0)), 0);
+  }, [currentProducts]);
 
   if (!project) return null;
 
@@ -311,14 +320,14 @@ export default function ProductsScreen({ navigation, route }) {
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex: 1}}>
         <FlatList
-          data={products}
+          data={currentProducts}
           keyExtractor={(_, i) => i.toString()}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 100 }}
           ListHeaderComponent={
             <ProductsHeader 
               sumTotalOut={sumTotalOut}
-              productCount={products.length}
+              productCount={currentProducts.length}
               newRow={newRow}
               setNewRow={setNewRow}
               saveProduct={saveProduct}
@@ -355,10 +364,7 @@ export default function ProductsScreen({ navigation, route }) {
                     <Text style={styles.actionBtnText}>Ändra</Text>
                  </TouchableOpacity>
                  <View style={styles.vDivider} />
-                 <TouchableOpacity onPress={() => {
-                    const updated = products.filter((_, i) => i !== index);
-                    updateProject(project.id, { products: updated });
-                 }} style={styles.actionBtn}>
+                 <TouchableOpacity onPress={() => deleteProduct(index)} style={styles.actionBtn}>
                     <Ionicons name="trash-outline" size={16} color={WorkaholicTheme.colors.error} />
                     <Text style={[styles.actionBtnText, {color: WorkaholicTheme.colors.error}]}>Ta bort</Text>
                  </TouchableOpacity>
@@ -368,7 +374,6 @@ export default function ProductsScreen({ navigation, route }) {
         />
       </KeyboardAvoidingView>
 
-      {/* MATERIALSÖK MODAL - BEHÅLL SOM DEN ÄR */}
       <Modal visible={isModalVisible} animationType="slide">
         <SafeAreaView style={{ flex: 1, backgroundColor: '#F8F9FB' }}>
             <View style={styles.modalHeader}>
@@ -416,6 +421,9 @@ export default function ProductsScreen({ navigation, route }) {
                 const itemArt = item.artNr || item.articleNumber || item.id;
                 const isSelected = selectedInModal.find(x => (x.artNr || x.articleNumber || x.id) === itemArt);
                 
+                // 🔑 Visa både brutto och netto om rabatt finns
+                const hasDiscount = item.discountPercent && parseFloat(item.discountPercent) > 0;
+
                 return (
                   <TouchableOpacity 
                     style={[styles.resultCard, isSelected && styles.resultCardSelected]} 
@@ -426,12 +434,32 @@ export default function ProductsScreen({ navigation, route }) {
                   >
                     <View style={{flex: 1}}>
                       <Text style={styles.resultName}>{item.label || item.name}</Text>
-                      <Text style={styles.resultArt}>Art.nr: {itemArt}</Text>
+                      <View style={styles.resultMetaRow}>
+                        <Text style={styles.resultArt}>Art.nr: {itemArt}</Text>
+                        {hasDiscount && (
+                           <View style={styles.discountBadge}>
+                              <Text style={styles.discountBadgeText}>-{item.discountPercent}%</Text>
+                           </View>
+                        )}
+                      </View>
+                      {hasDiscount && item.discountLabel && (
+                        <Text style={styles.discountGroupText} numberOfLines={1}>{item.discountLabel}</Text>
+                      )}
                     </View>
+                    
                     <View style={styles.resultPriceBox}>
-                       <Text style={styles.resultPrice}>{item.price || item.purchasePrice || 0}:-</Text>
+                        {hasDiscount && (
+                          <Text style={styles.resultBrutto}>{formatNumber(item.bruttoPrice)}:-</Text>
+                        )}
+                        <Text style={styles.resultPrice}>{formatNumber(item.price)}:-</Text>
+                        <Text style={styles.resultVatInfo}>exkl. moms</Text>
                     </View>
-                    <Ionicons name={isSelected ? "checkmark-circle" : "add-circle-outline"} size={26} color={isSelected ? "#34C759" : "#DDD"} />
+                    
+                    <Ionicons 
+                      name={isSelected ? "checkmark-circle" : "add-circle-outline"} 
+                      size={26} 
+                      color={isSelected ? "#34C759" : "#DDD"} 
+                    />
                   </TouchableOpacity>
                 );
               }}
@@ -462,25 +490,21 @@ const styles = StyleSheet.create({
   summaryValue: { fontSize: 24, fontWeight: '900', color: '#FFF', marginTop: 4 },
   badge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
   badgeText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
-
   inputCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 25, marginBottom: 25, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   sectionLabel: { fontSize: 10, fontWeight: "900", color: "#CCC", letterSpacing: 1 },
   searchLink: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F0F7FF', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 10 },
   searchLinkText: { fontSize: 10, fontWeight: '900', color: WorkaholicTheme.colors.primary },
-  
   inputGroup: { marginBottom: 15 },
   inputRow: { flexDirection: "row", gap: 12, marginBottom: 15 },
   miniLabel: { fontSize: 9, color: "#AAA", marginBottom: 6, fontWeight: '900', letterSpacing: 0.5 },
   inputMain: { backgroundColor: '#F5F5F7', borderRadius: 12, padding: 15, fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
   input: { backgroundColor: '#F5F5F7', borderRadius: 12, padding: 12, fontSize: 14, fontWeight: '700', color: '#1C1C1E' },
-  
   buttonRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 5 },
   mainAddBtn: { flex: 1, backgroundColor: WorkaholicTheme.colors.primary, padding: 16, borderRadius: 15, alignItems: 'center' },
   mainAddBtnText: { color: '#FFF', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 },
   cancelBtn: { padding: 15 },
   cancelBtnText: { color: '#8E8E93', fontWeight: '800', fontSize: 13 },
-
   listTitle: { fontSize: 13, fontWeight: '900', color: '#8E8E93', marginBottom: 15, marginLeft: 5, letterSpacing: 1 },
   productCard: { backgroundColor: '#FFF', borderRadius: 20, marginBottom: 12, elevation: 2, overflow: 'hidden', borderWidth: 1, borderColor: '#F0F0F0' },
   productMain: { flexDirection: 'row', padding: 18, alignItems: 'center' },
@@ -490,15 +514,10 @@ const styles = StyleSheet.create({
   productPriceArea: { alignItems: 'flex-end', marginLeft: 10 },
   productTotal: { fontSize: 16, fontWeight: '900', color: '#1C1C1E' },
   productQty: { fontSize: 11, color: WorkaholicTheme.colors.primary, fontWeight: '800', marginTop: 2 },
-  
   productActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#F8F8F8', backgroundColor: '#FAFAFA' },
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 6 },
   actionBtnText: { fontSize: 12, fontWeight: '800', color: WorkaholicTheme.colors.primary },
   vDivider: { width: 1, backgroundColor: '#EEE' },
-
-  emptyContainer: { alignItems: 'center', marginTop: 40, opacity: 0.5 },
-  emptyText: { marginTop: 10, color: '#999', fontWeight: '700', fontSize: 14 },
-
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#EEE' },
   modalCloseBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F5F5F7', justifyContent: 'center', alignItems: 'center' },
   modalTitle: { fontSize: 18, fontWeight: '900', color: '#1C1C1E' },
@@ -513,10 +532,15 @@ const styles = StyleSheet.create({
   resultCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 18, borderRadius: 18, marginBottom: 10, elevation: 1 },
   resultCardSelected: { backgroundColor: '#F0F7FF', borderWidth: 1, borderColor: WorkaholicTheme.colors.primary },
   resultName: { fontSize: 14, fontWeight: '800', color: '#333', marginBottom: 4 },
+  resultMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   resultArt: { fontSize: 11, color: '#999', fontWeight: '600' },
+  discountBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  discountBadgeText: { fontSize: 9, fontWeight: '900', color: '#2E7D32' },
+  discountGroupText: { fontSize: 10, color: '#AAA', fontWeight: '600', marginTop: 4 },
   resultPriceBox: { alignItems: 'flex-end', marginRight: 15 },
+  resultBrutto: { fontSize: 11, color: '#AAA', textDecorationLine: 'line-through', marginBottom: 2 },
   resultPrice: { fontSize: 15, fontWeight: '900', color: '#1C1C1E' },
-  wsLabel: { fontSize: 8, fontWeight: '900', color: '#BBB', textTransform: 'uppercase', marginTop: 2 },
+  resultVatInfo: { fontSize: 8, color: '#CCC', fontWeight: '700', marginTop: 1 },
   modalFooter: { padding: 20, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#EEE' },
   addSelectedBtn: { backgroundColor: WorkaholicTheme.colors.primary, padding: 18, borderRadius: 18, alignItems: 'center' },
   addSelectedText: { color: '#FFF', fontWeight: '900', fontSize: 14, letterSpacing: 1 }

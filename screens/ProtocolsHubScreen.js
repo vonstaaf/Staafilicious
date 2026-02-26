@@ -8,44 +8,44 @@ import { auth, db } from "../firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
 
 // --- SKARPA MALLAR BASERADE PÅ DIN UPPLADDADE DOKUMENTATION (EIO/IN) ---
-// Optimerade texter för att rymma allt på en PDF-sida
+// Uppdaterade med 'unit' för att automatiskt trigga mätvärdesfälten i InspectionScreen
 
 const TNC_TEMPLATE = [
-  { id: 'tnc_1', section: '1. Okulär kontroll', label: 'Kablage & Isolering', desc: 'Ingen klämrisk mot plåt/skarpa kanter. Isolering oskadad.' },
-  { id: 'tnc_2', section: '1. Okulär kontroll', label: 'PEN / N / PE anslutning', desc: 'Ljusblå till N, G/G till PE. (Undantag N-ledare via JFB).' },
-  { id: 'tnc_3', section: '1. Okulär kontroll', label: 'Avskalning & Area', desc: 'Korrekt avskalning. Area matchar överströmsskydd.' },
-  { id: 'tnc_4', section: '1. Okulär kontroll', label: 'Dokumentation & Märkning', desc: 'Gruppförteckning/schema finns. Centralmärkning utförd.' },
-  { id: 'tnc_5', section: '1. Okulär kontroll', label: 'Jordfelsbrytare Info', desc: 'Instruktion + skiss för JFB-skydd finns uppsatt.' },
-  { id: 'tnc_6', section: '1. Okulär kontroll', label: 'Moment & IP-klass', desc: 'Momentdraget. Kapsling tät (min IP20/IP21).' },
-  { id: 'tnc_m1', section: '2. Mätning (Löst)', label: 'Kontinuitet & Utjämning', desc: 'Skyddsutjämning OK (vatten, avlopp, vent etc).' },
-  { id: 'tnc_m2', section: '2. Mätning (Löst)', label: 'Isolationsmätning', desc: 'Minst 0.5 MΩ vid 500V mellan faser/jord.' },
-  { id: 'tnc_s1', section: '3. Kontroll (Satt)', label: 'Huvudbrytare & JFB-test', desc: 'Funktionstest av brytare och JFB via testknapp.' },
-  { id: 'tnc_s2', section: '3. Kontroll (Satt)', label: 'JFB Utlösningstid/ström', desc: 'Uppmätt tid (max 300ms) och ström (mA).' },
-  { id: 'tnc_s3', section: '3. Kontroll (Satt)', label: 'Spänningskontroll 230V', desc: 'Uttag har 230V. Fas/Nolla ej förväxlade (ej 400V).' },
-  { id: 'tnc_s4', section: '3. Kontroll (Satt)', label: 'Fasföljd & Rotation', desc: 'Rätt rotationsriktning på 3-fas utrustning.' },
-  { id: 'tnc_s5', section: '3. Kontroll (Satt)', label: 'Förimpedans (Zför)', desc: 'Notera uppmätt eller beräknat värde.' },
+  { id: 'tnc_1', section: '1. Okulär kontroll', label: 'Kablage & Isolering', desc: 'Ingen klämrisk mot plåt/skarpa kanter. Isolering oskadad.', unit: '' },
+  { id: 'tnc_2', section: '1. Okulär kontroll', label: 'PEN / N / PE anslutning', desc: 'Ljusblå till N, G/G till PE. (Undantag N-ledare via JFB).', unit: '' },
+  { id: 'tnc_3', section: '1. Okulär kontroll', label: 'Avskalning & Area', desc: 'Korrekt avskalning. Area matchar överströmsskydd.', unit: '' },
+  { id: 'tnc_4', section: '1. Okulär kontroll', label: 'Dokumentation & Märkning', desc: 'Gruppförteckning/schema finns. Centralmärkning utförd.', unit: '' },
+  { id: 'tnc_5', section: '1. Okulär kontroll', label: 'Jordfelsbrytare Info', desc: 'Instruktion + skiss för JFB-skydd finns uppsatt.', unit: '' },
+  { id: 'tnc_6', section: '1. Okulär kontroll', label: 'Moment & IP-klass', desc: 'Momentdraget. Kapsling tät (min IP20/IP21).', unit: '' },
+  { id: 'tnc_m1', section: '2. Mätning (Löst)', label: 'Kontinuitet & Utjämning', desc: 'Skyddsutjämning OK (vatten, avlopp, vent etc).', unit: '' },
+  { id: 'tnc_m2', section: '2. Mätning (Löst)', label: 'Isolationsmätning', desc: 'Minst 0.5 MΩ vid 500V mellan faser/jord.', unit: 'MegaOhm' },
+  { id: 'tnc_s1', section: '3. Kontroll (Satt)', label: 'Huvudbrytare & JFB-test', desc: 'Funktionstest av brytare och JFB via testknapp.', unit: '' },
+  { id: 'tnc_s2', section: '3. Kontroll (Satt)', label: 'JFB Utlösningstid/ström', desc: 'Uppmätt tid (max 300ms) och ström (mA).', unit: 'mA' },
+  { id: 'tnc_s3', section: '3. Kontroll (Satt)', label: 'Spänningskontroll 230V', desc: 'Uttag har 230V. Fas/Nolla ej förväxlade (ej 400V).', unit: '' },
+  { id: 'tnc_s4', section: '3. Kontroll (Satt)', label: 'Fasföljd & Rotation', desc: 'Rätt rotationsriktning på 3-fas utrustning.', unit: '' },
+  { id: 'tnc_s5', section: '3. Kontroll (Satt)', label: 'Förimpedans (Zför)', desc: 'Notera uppmätt eller beräknat värde.', unit: 'Ohm' },
 ];
 
 const TNS_TEMPLATE = [
-  { id: 'tns_1', section: '1. Okulär kontroll', label: 'Kablage & Isolering', desc: 'Ingen klämrisk mot plåt/skarpa kanter. Isolering oskadad.' },
-  { id: 'tns_2', section: '1. Okulär kontroll', label: 'Separation N & PE', desc: 'Blå till N, G/G till PE. Ingen bygling i central.' },
-  { id: 'tns_3', section: '1. Okulär kontroll', label: 'Avskalning & Area', desc: 'Korrekt avskalning. Area matchar överströmsskydd.' },
-  { id: 'tns_4', section: '1. Okulär kontroll', label: 'Dokumentation & Märkning', desc: 'Gruppförteckning/schema finns. Centralmärkning utförd.' },
-  { id: 'tns_5', section: '1. Okulär kontroll', label: 'Jordfelsbrytare Info', desc: 'Instruktion + skiss för JFB-skydd finns uppsatt.' },
-  { id: 'tns_6', section: '1. Okulär kontroll', label: 'Moment & IP-klass', desc: 'Momentdraget. Kapsling tät (min IP20/IP21).' },
-  { id: 'tns_m1', section: '2. Mätning (Löst)', label: 'Kontinuitet & Utjämning', desc: 'Skyddsutjämning OK (vatten, avlopp, vent etc).' },
-  { id: 'tns_m2', section: '2. Mätning (Löst)', label: 'N-PE Separationstest', desc: 'Ingen kontakt N-PE (mäts med frånslagen JFB).' },
-  { id: 'tns_m3', section: '2. Mätning (Löst)', label: 'Isolationsmätning', desc: 'Minst 0.5 MΩ vid 500V mellan faser/jord.' },
-  { id: 'tns_s1', section: '3. Kontroll (Satt)', label: 'Huvudbrytare & JFB-test', desc: 'Funktionstest av brytare och JFB via testknapp.' },
-  { id: 'tns_s2', section: '3. Kontroll (Satt)', label: 'JFB Utlösningstid/ström', desc: 'Uppmätt tid (max 300ms) och ström (mA).' },
-  { id: 'tns_s3', section: '3. Kontroll (Satt)', label: 'Spänningskontroll 230V', desc: 'Uttag har 230V. Fas/Nolla ej förväxlade (ej 400V).' },
-  { id: 'tns_s4', section: '3. Kontroll (Satt)', label: 'Fasföljd & Rotation', desc: 'Rätt rotationsriktning på 3-fas utrustning.' },
-  { id: 'tns_s5', section: '3. Kontroll (Satt)', label: 'Förimpedans (Zför)', desc: 'Notera uppmätt eller beräknat värde.' },
+  { id: 'tns_1', section: '1. Okulär kontroll', label: 'Kablage & Isolering', desc: 'Ingen klämrisk mot plåt/skarpa kanter. Isolering oskadad.', unit: '' },
+  { id: 'tns_2', section: '1. Okulär kontroll', label: 'Separation N & PE', desc: 'Blå till N, G/G till PE. Ingen bygling i central.', unit: '' },
+  { id: 'tns_3', section: '1. Okulär kontroll', label: 'Avskalning & Area', desc: 'Korrekt avskalning. Area matchar överströmsskydd.', unit: '' },
+  { id: 'tns_4', section: '1. Okulär kontroll', label: 'Dokumentation & Märkning', desc: 'Gruppförteckning/schema finns. Centralmärkning utförd.', unit: '' },
+  { id: 'tns_5', section: '1. Okulär kontroll', label: 'Jordfelsbrytare Info', desc: 'Instruktion + skiss för JFB-skydd finns uppsatt.', unit: '' },
+  { id: 'tns_6', section: '1. Okulär kontroll', label: 'Moment & IP-klass', desc: 'Momentdraget. Kapsling tät (min IP20/IP21).', unit: '' },
+  { id: 'tns_m1', section: '2. Mätning (Löst)', label: 'Kontinuitet & Utjämning', desc: 'Skyddsutjämning OK (vatten, avlopp, vent etc).', unit: '' },
+  { id: 'tns_m2', section: '2. Mätning (Löst)', label: 'N-PE Separationstest', desc: 'Ingen kontakt N-PE (mäts med frånslagen JFB).', unit: '' },
+  { id: 'tns_m3', section: '2. Mätning (Löst)', label: 'Isolationsmätning', desc: 'Minst 0.5 MΩ vid 500V mellan faser/jord.', unit: 'MegaOhm' },
+  { id: 'tns_s1', section: '3. Kontroll (Satt)', label: 'Huvudbrytare & JFB-test', desc: 'Funktionstest av brytare och JFB via testknapp.', unit: '' },
+  { id: 'tns_s2', section: '3. Kontroll (Satt)', label: 'JFB Utlösningstid/ström', desc: 'Uppmätt tid (max 300ms) och ström (mA).', unit: 'mA' },
+  { id: 'tns_s3', section: '3. Kontroll (Satt)', label: 'Spänningskontroll 230V', desc: 'Uttag har 230V. Fas/Nolla ej förväxlade (ej 400V).', unit: '' },
+  { id: 'tns_s4', section: '3. Kontroll (Satt)', label: 'Fasföljd & Rotation', desc: 'Rätt rotationsriktning på 3-fas utrustning.', unit: '' },
+  { id: 'tns_s5', section: '3. Kontroll (Satt)', label: 'Förimpedans (Zför)', desc: 'Notera uppmätt eller beräknat värde.', unit: 'Ohm' },
 ];
 
 export default function ProtocolsHubScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const { project } = route.params || {}; // Hämta projektet
+  const { project } = route.params || {}; 
   const [profession, setProfession] = useState(""); 
   const [loading, setLoading] = useState(true);
 
@@ -77,7 +77,7 @@ export default function ProtocolsHubScreen({ route, navigation }) {
       customTitle: title,
       customTemplate: templateItems,
       isNewProtocol: true,
-      project // Skicka med projektet
+      project 
     });
   };
 
@@ -100,13 +100,16 @@ export default function ProtocolsHubScreen({ route, navigation }) {
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={WorkaholicTheme.colors.primary} /></View>;
 
+  // Formatera projektnamnet med stor begynnelsebokstav ifall det saknas
+  const projectName = project?.name ? project.name.charAt(0).toUpperCase() + project.name.slice(1) : "Välj protokoll";
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
       <AppHeader 
         title="KONTROLLER" 
-        subTitle={project?.name || "Välj protokoll"} 
+        subTitle={projectName} 
         navigation={navigation} 
       />
       
@@ -121,7 +124,7 @@ export default function ProtocolsHubScreen({ route, navigation }) {
         {/* --- ALLA SER DETTA --- */}
         <ProtocolCard 
           title="EGENKONTROLL" 
-          sub="Digital kontroll & foton" 
+          sub="Din standardmall & foton" 
           icon="checkmark-done-circle" 
           color={WorkaholicTheme.colors.success} 
           onPress={() => navigation.navigate("InspectionScreen", { project })} 

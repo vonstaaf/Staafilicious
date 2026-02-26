@@ -94,11 +94,12 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.projectName}>{selectedProject.name.toUpperCase()}</Text>
             
             <View style={styles.shortcutRow}>
-              <TouchableOpacity style={styles.shortcutBtn} onPress={() => navigation.navigate("Inspection")}>
+              {/* 🔑 Uppdaterad navigering med rätt rutt-namn och projekt-parameter */}
+              <TouchableOpacity style={styles.shortcutBtn} onPress={() => navigation.navigate("InspectionScreen", { project: selectedProject })}>
                 <Ionicons name="shield-checkmark" size={20} color={WorkaholicTheme.colors.primary} />
                 <Text style={styles.shortcutText}>Egenkontroll</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.shortcutBtn} onPress={() => navigation.navigate("GroupSchedule")}>
+              <TouchableOpacity style={styles.shortcutBtn} onPress={() => navigation.navigate("GroupSchedule", { project: selectedProject })}>
                 <Ionicons name="list" size={20} color={WorkaholicTheme.colors.primary} />
                 <Text style={styles.shortcutText}>Gruppschema</Text>
               </TouchableOpacity>

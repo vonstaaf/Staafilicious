@@ -11,7 +11,6 @@
     "eas-build-pre-install": "mkdir -p android/app && echo \"$GOOGLE_SERVICES_JSON\" > android/app/google-services.json"
   },
   "dependencies": {
-    "@expo/metro-config": "~0.19.0",
     "@expo/vector-icons": "~14.0.4",
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-native-community/slider": "4.5.5",
@@ -23,6 +22,7 @@
     "babel-preset-expo": "~12.0.0",
     "expo": "~52.0.0",
     "expo-asset": "~11.0.5",
+    "expo-build-properties": "~0.13.3",
     "expo-clipboard": "~7.0.1",
     "expo-constants": "~17.0.8",
     "expo-device": "~7.0.3",
@@ -31,6 +31,7 @@
     "expo-font": "~13.0.4",
     "expo-image-manipulator": "~13.0.6",
     "expo-image-picker": "~16.0.6",
+    "expo-insights": "~0.8.2",
     "expo-navigation-bar": "~4.0.9",
     "expo-notifications": "~0.29.14",
     "expo-print": "~14.0.3",
@@ -51,15 +52,13 @@
     "react-native-svg": "15.8.0",
     "react-native-web": "~0.19.6",
     "react-native-webview": "13.12.5",
-    "react-native-worklets": "0.5.1",
     "xlsx": "^0.18.5"
   },
   "overrides": {
     "metro": "0.81.0",
     "metro-cache": "0.81.0",
     "metro-config": "0.81.0",
-    "metro-resolver": "0.81.0",
-    "@expo/metro-config": "~0.19.0"
+    "metro-resolver": "0.81.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",

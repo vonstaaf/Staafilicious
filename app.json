@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.staafilicious.workaholic",
-      "buildNumber": "23",
+      "buildNumber": "25",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Appen behöver tillgång till dina bilder för att du ska kunna ladda upp din företagslogotyp och dokumentera dina Projekt.",
         "NSCameraUsageDescription": "Appen behöver tillgång till kameran för att du ska kunna ta foton direkt till dina Projekt.",
@@ -24,7 +24,7 @@
     },
     "android": {
       "package": "com.vonstaaf.staafiliciousfrontend",
-      "versionCode": 6,
+      "versionCode": 8,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#121212"
@@ -34,7 +34,8 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.FOREGROUND_SERVICE"
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -58,12 +59,23 @@
           "organization": "workaholic"
         }
       ],
-      "@sentry/react-native"
+      "@sentry/react-native",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
         "projectId": "84ce2dfb-06fd-4fe5-8703-cda97f21d310"
       }
-    }
+    },
+    "owner": "vonstaaf"
   }
 }

@@ -1,64 +1,16 @@
 import { ref, get, update } from "firebase/database"; 
-import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { rtdb } from "../firebaseConfig"; 
 
 // --- MINNES-CACHE ---
 let cachedProducts = null;
-let isFetching = false; // 🔑 Spärr för att förhindra "race conditions"
-
-/**
- * Hjälpfunktion för att tvätta strängar (Fuzzy search).
- */
-const normalize = (text) => {
-  if (!text) return "";
-  return String(text)
-    .toLowerCase()
-    .replace(/[^a-z0-9åäö]/g, ""); 
-};
-
-/**
- * REPARATIONSFUNKTION:
- * Lagar permanent nollorna i Firebase för 08-artiklar.
- */
-export const repairDatabaseArtNumbers = async () => {
-  const db = rtdb; 
-  const productsRef = ref(db, 'products');
-
-  try {
-    console.log("🛠 Startar reparation av artikelnummer i Firebase...");
-    const snapshot = await get(productsRef);
-    if (!snapshot.exists()) return { success: false, message: "Ingen data hittades" };
-
-    const data = snapshot.val();
-    const updates = {};
-    let count = 0;
-
-    Object.keys(data).forEach(key => {
-      let art = String(data[key].artNr || "");
-      if (art.length === 5 && art.startsWith('8')) {
-        updates[`/products/${key}/artNr`] = "0" + art;
-        count++;
-      }
-    });
-
-    if (count > 0) {
-      await update(ref(db), updates);
-      cachedProducts = null; // Töm cachen
-      console.log(`✅ Reparation klar! ${count} st artiklar uppdaterade.`);
-      return { success: true, count };
-    }
-    return { success: true, count: 0 };
-  } catch (error) {
-    console.error("❌ Reparationsfel:", error);
-    throw error;
-  }
-};
+let isFetching = false;
 
 /**
  * SAMMANFOGAD & OPTIMERAD SÖKNING:
+ * Nu med Turbo-prestanda och robust pris-lookup.
  */
-export const searchProducts = async (searchQuery, wholesalerId = 'local') => {
+export const searchProducts = async (searchQuery, wholesalerId = 'local', userDiscounts = null) => {
   if (!searchQuery || searchQuery.length < 2) return [];
   
   const term = searchQuery.toLowerCase().trim();
@@ -66,14 +18,13 @@ export const searchProducts = async (searchQuery, wholesalerId = 'local') => {
   const user = auth.currentUser;
 
   try {
-    // 1. 🛑 Spärr: Om vi redan håller på att hämta, vänta istället för att starta en ny
+    // 1. Spärr: Om vi redan hämtar data, vänta istället för att starta ny hämtning
     if (!cachedProducts && isFetching) {
-      console.log("⏳ Väntar på att pågående hämtning ska bli klar...");
       await new Promise(res => setTimeout(res, 800));
-      return searchProducts(searchQuery, wholesalerId);
+      return searchProducts(searchQuery, wholesalerId, userDiscounts);
     }
 
-    // 2. Hämta och bygg cache (endast en gång)
+    // 2. Hämta och bygg cache (endast vid första sökningen)
     if (!cachedProducts) {
       isFetching = true;
       console.log("🔍 Firebase: Hämtar produktkatalogen (184k rader)...");
@@ -89,25 +40,28 @@ export const searchProducts = async (searchQuery, wholesalerId = 'local') => {
       const data = snapshot.val();
       const tempArray = [];
       
-      // 🚀 Optimerad loop för enorma datamängder
+      // Snabb-loop för att bygga sökindex
       for (const key in data) {
         const item = data[key];
         let art = String(item.artNr || item.articleNumber || "-");
         
-        // 08-fix direkt vid cache-bygget
+        // 08-fix (artiklar som börjar på noll men tappat den i db)
         if (art.length === 5 && art.startsWith('8')) art = "0" + art;
 
-        // 🛠 KROCKKUDDE: Säkra att priset blir ett giltigt nummer även om det saknas i db
-        const rawPrice = item.price || item.purchasePrice || 0;
-        const safePrice = parseFloat(String(rawPrice).replace(',', '.'));
+        // 🛠 FLEXIBEL PRIS-LOOKUP: Letar efter alla vanliga fältnamn (pris, brutto, price etc)
+        const rawPrice = item.price || item.pris || item.brutto || item.purchasePrice || 0;
+        const safePrice = typeof rawPrice === 'string' 
+          ? parseFloat(rawPrice.replace(',', '.')) 
+          : parseFloat(rawPrice);
 
         tempArray.push({
           ...item,
           dbKey: key,
-          label: item.label || item.name || "Namn saknas",
+          label: item.label || item.name || item.beskrivning || "Namn saknas",
           artNr: art, 
           originalPrice: isNaN(safePrice) ? 0 : safePrice,
-          // ⚡ SUPER-INDEX: En sammanslagen sträng för blixtsnabb sökning
+          rabattkod: String(item.rabattkod || item.rg || item.rK || "").trim(),
+          // Blixtsnabb söksträng
           _s: (art + " " + (item.label || item.name || "")).toLowerCase()
         });
       }
@@ -117,50 +71,94 @@ export const searchProducts = async (searchQuery, wholesalerId = 'local') => {
       console.log(`✅ Cache redo: ${cachedProducts.length} artiklar.`);
     }
 
-    // 3. ⚡ Blixtsnabb sökning (Vi söker nu bara i ETT fält istället för tre)
-    // console.log(`🔎 Söker efter "${term}"...`); // Avkommentera för att debugga
-    let baseResults = cachedProducts.filter(item => item._s.includes(term));
-
-    // 4. Applicera grossist-priser
-    if (wholesalerId !== 'local' && user) {
-      baseResults = baseResults.map(item => {
-        let factor = 1.0;
-        if (wholesalerId === 'rexel') factor = 0.85;
-        if (wholesalerId === 'solar') factor = 0.90;
-        if (wholesalerId === 'ahlsell') factor = 0.92;
-        
-        // 🛠 KROCKKUDDE: Säkrar att originalPrice finns
-        const basePrice = item.originalPrice || 0;
-        
-        return {
-          ...item,
-          price: (basePrice * factor).toFixed(2),
-          wholesalerName: wholesalerId.charAt(0).toUpperCase() + wholesalerId.slice(1),
-          isWholesalerPrice: true
-        };
-      });
-    } else {
-      baseResults = baseResults.map(item => ({
-        ...item,
-        price: (item.originalPrice || 0).toFixed(2),
-        isWholesalerPrice: false
-      }));
+    // 3. ⚡ BLIXTSNABB FILTRERING
+    // Vi filtrerar först ut alla som matchar, utan att räkna priser än
+    let matches = [];
+    for (let i = 0; i < cachedProducts.length; i++) {
+      if (cachedProducts[i]._s.includes(term)) {
+        matches.push(cachedProducts[i]);
+        if (matches.length > 100) break; // Avbryt tidigt för prestanda
+      }
     }
 
-    // 5. Sortering och begränsning (Slice till 40 för bättre UI-flyt)
-    const sorted = baseResults.sort((a, b) => {
-      const aStarts = a._s.startsWith(term);
-      const bStarts = b._s.startsWith(term);
-      if (aStarts && !bStarts) return -1;
-      if (!aStarts && bStarts) return 1;
-      return 0;
-    });
+    // 4. ✂️ SLICE FÖRE MAP (Detta gör det "sjukt snabbt")
+    // Vi räknar bara rabatter på de 40 artiklar som faktiskt visas.
+    const limitedResults = matches.slice(0, 40);
 
-    return sorted.slice(0, 40);
+    // 5. 🛠 APPLICERA RABATTER
+    const myAgreements = (wholesalerId !== 'local' && userDiscounts) ? userDiscounts[wholesalerId] : null;
+
+    return limitedResults.map(item => {
+      let discountPercent = 0;
+      let discountLabel = "Generell rabatt";
+
+      if (wholesalerId !== 'local' && user && myAgreements) {
+        // Kolla efter exakt träff i dina 15 000 rabattgrupper
+        const agreement = myAgreements[item.rabattkod];
+        if (agreement) {
+          const pVal = agreement.p || agreement.percent || 0;
+          discountPercent = parseFloat(pVal);
+          discountLabel = agreement.l || agreement.label || item.rabattkod;
+        } else {
+          // Fallback: Generella rabattsatser per grossist
+          if (wholesalerId === 'rexel') discountPercent = 0.15;
+          if (wholesalerId === 'solar') discountPercent = 0.10;
+          if (wholesalerId === 'ahlsell') discountPercent = 0.08;
+        }
+      }
+
+      const brutto = item.originalPrice || 0;
+      const netto = brutto * (1 - discountPercent);
+
+      return {
+        ...item,
+        price: netto.toFixed(2), // Netto-priset som visas i listan
+        bruttoPrice: brutto.toFixed(2),
+        discountPercent: (discountPercent * 100).toFixed(0),
+        discountLabel: discountLabel,
+        wholesalerName: wholesalerId.charAt(0).toUpperCase() + wholesalerId.slice(1),
+        isWholesalerPrice: wholesalerId !== 'local'
+      };
+    });
 
   } catch (error) {
     isFetching = false;
     console.error("❌ Sökfel:", error);
     return [];
+  }
+};
+
+/**
+ * REPARATIONSFUNKTION:
+ */
+export const repairDatabaseArtNumbers = async () => {
+  const db = rtdb; 
+  const productsRef = ref(db, 'products');
+
+  try {
+    const snapshot = await get(productsRef);
+    if (!snapshot.exists()) return { success: false };
+
+    const data = snapshot.val();
+    const updates = {};
+    let count = 0;
+
+    Object.keys(data).forEach(key => {
+      let art = String(data[key].artNr || "");
+      if (art.length === 5 && art.startsWith('8')) {
+        updates[`/products/${key}/artNr`] = "0" + art;
+        count++;
+      }
+    });
+
+    if (count > 0) {
+      await update(ref(db), updates);
+      cachedProducts = null;
+      return { success: true, count };
+    }
+    return { success: true, count: 0 };
+  } catch (error) {
+    console.error("❌ Reparationsfel:", error);
+    throw error;
   }
 };
