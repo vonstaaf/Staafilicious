@@ -18,6 +18,7 @@ import {
 } from "firebase/firestore";
 
 import { sendPushNotification } from "../utils/pushService";
+import { formatProjectName } from "../utils/stringHelpers";
 
 export const ProjectsContext = createContext();
 
@@ -28,10 +29,14 @@ export const ProjectsProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [companyData, setCompanyData] = useState(null);
   
-  // 🔑 MATERIAL, RABATTER & MALLAR
+  // 🔑 MATERIAL & RABATTER
   const [allProducts, setAllProducts] = useState([]);
   const [discountAgreements, setDiscountAgreements] = useState({});
-  const [inspectionTemplate, setInspectionTemplate] = useState([]); // 🔑 Din Master-mall
+
+  // 🔑 NYTT: Hantering av två olika mallar (Allmän & Golvvärme)
+  const [templates, setTemplates] = useState({ general: [], heating: [] });
+  // Behåller denna för bakåtkompatibilitet med createProject-logiken
+  const inspectionTemplate = useMemo(() => templates.general, [templates]);
 
   const generateProjectCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -77,7 +82,7 @@ export const ProjectsProvider = ({ children }) => {
     let unsubscribeSnapshot = null;
     let unsubscribeProducts = null; 
     let unsubscribeDiscounts = null;
-    let unsubscribeTemplate = null; // 🔑 Lyssnare för Master-mallen
+    let unsubscribeTemplates = null; 
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user || null);
@@ -87,12 +92,12 @@ export const ProjectsProvider = ({ children }) => {
         setCompanyData(null);
         setAllProducts([]);
         setDiscountAgreements({});
-        setInspectionTemplate([]); // Rensa vid utloggning
+        setTemplates({ general: [], heating: [] });
         setLoading(false);
         if (unsubscribeSnapshot) unsubscribeSnapshot();
         if (unsubscribeProducts) unsubscribeProducts();
         if (unsubscribeDiscounts) unsubscribeDiscounts();
-        if (unsubscribeTemplate) unsubscribeTemplate();
+        if (unsubscribeTemplates) unsubscribeTemplates();
         return;
       }
 
@@ -164,13 +169,16 @@ export const ProjectsProvider = ({ children }) => {
         }
       });
 
-      // 🔑 5. NYTT: Lyssna på Master-mallen för Egenkontroller
-      const templateRef = doc(db, "users", user.uid, "settings", "inspectionTemplate");
-      unsubscribeTemplate = onSnapshot(templateRef, (snap) => {
-        if (snap.exists()) {
-          setInspectionTemplate(snap.data().items || []);
-          console.log("✅ Master-mall för egenkontroller laddad.");
-        }
+      // 🔑 5. Lyssna på Master-mallar (Kollektion för flera typer)
+      const templatesRef = collection(db, "users", user.uid, "templates");
+      unsubscribeTemplates = onSnapshot(templatesRef, (snap) => {
+        const tData = { general: [], heating: [] };
+        snap.forEach(doc => {
+          if (doc.id === 'general' || doc.id === 'heating') {
+            tData[doc.id] = doc.data().items || [];
+          }
+        });
+        setTemplates(tData);
       });
     });
 
@@ -179,15 +187,9 @@ export const ProjectsProvider = ({ children }) => {
       if (unsubscribeSnapshot) unsubscribeSnapshot();
       if (unsubscribeProducts) unsubscribeProducts();
       if (unsubscribeDiscounts) unsubscribeDiscounts();
-      if (unsubscribeTemplate) unsubscribeTemplate();
+      if (unsubscribeTemplates) unsubscribeTemplates();
     };
   }, []);
-
-  const cleanProjectName = (name = "") => {
-    if (!name) return "";
-    const trimmed = name.toString().trim();
-    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-  };
 
   const setSelectedProject = async (project) => {
     setSelectedProjectState(project);
@@ -198,11 +200,22 @@ export const ProjectsProvider = ({ children }) => {
     }
   };
 
-  const saveInspectionTemplate = async (items) => {
+  // 🔑 UPPDATERAD OCH SÄKRAD: Hanterar både (typ, rader) och (rader)
+  const saveInspectionTemplate = async (type, items) => {
     if (!currentUser) return;
+    
+    // Om 'type' är en array är det gamla anropet: saveInspectionTemplate(items)
+    // Då sätter vi typen till 'general' och flyttar datan.
+    let finalType = typeof type === 'string' ? type : 'general';
+    let finalItems = Array.isArray(type) ? type : items;
+
     try {
-      const templateRef = doc(db, "users", currentUser.uid, "settings", "inspectionTemplate");
-      await setDoc(templateRef, { items: items, updatedAt: serverTimestamp() });
+      // finalType är nu garanterat en sträng, vilket stoppar .split-felet
+      const templateRef = doc(db, "users", currentUser.uid, "templates", finalType);
+      await setDoc(templateRef, { 
+        items: finalItems || [], 
+        updatedAt: serverTimestamp() 
+      });
     } catch (error) {
       console.error("Kunde inte spara mall:", error);
       throw error;
@@ -212,16 +225,15 @@ export const ProjectsProvider = ({ children }) => {
   const createProject = async (name, code) => {
     if (!auth.currentUser) throw new Error("Ingen användare");
     
-    const formattedName = cleanProjectName(name);
+    const formattedName = formatProjectName(name);
     const codeToUse = code ? code.toString().toUpperCase().trim() : generateProjectCode();
     
-    // 🔑 Använd Master-mallen från state om den finns
-    let templateToUse = inspectionTemplate.length > 0 ? inspectionTemplate : [];
+    // Använd templates.general som default-mall vid skapande
+    let templateToUse = templates.general.length > 0 ? templates.general : [];
 
-    // Om state är tomt, gör en sista koll i databasen (säkerhetsåtgärd)
     if (templateToUse.length === 0) {
         try {
-          const templateRef = doc(db, "users", auth.currentUser.uid, "settings", "inspectionTemplate");
+          const templateRef = doc(db, "users", auth.currentUser.uid, "templates", "general");
           const templateSnap = await getDoc(templateRef);
           if (templateSnap.exists()) {
             templateToUse = templateSnap.data().items || [];
@@ -270,7 +282,7 @@ export const ProjectsProvider = ({ children }) => {
 
   const updateProject = async (projectId, updates) => {
     const finalUpdates = { ...updates };
-    if (updates.name) finalUpdates.name = cleanProjectName(updates.name);
+    if (updates.name) finalUpdates.name = formatProjectName(updates.name);
     if (updates.code) finalUpdates.code = updates.code.toString().toUpperCase().replace(/[^a-zA-Z0-9]/g, "");
 
     const ref = doc(db, "groups", projectId);
@@ -315,7 +327,8 @@ export const ProjectsProvider = ({ children }) => {
         saveInspectionTemplate,
         allProducts,
         discountAgreements,
-        inspectionTemplate // 🔑 Exponerad för inställningssidan
+        templates, 
+        inspectionTemplate 
       }}
     >
       {children}

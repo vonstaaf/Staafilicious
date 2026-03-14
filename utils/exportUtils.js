@@ -3,21 +3,14 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Print from 'expo-print'; // 👈 Behövs för PDF
 import { Alert } from 'react-native';
-
-/**
- * HJÄLPFUNKTION: Formatera namn (Stor bokstav)
- */
-const formatName = (text) => {
-  if (!text) return "";
-  return text.charAt(0).toUpperCase() + text.slice(1);
-};
+import { capitalizeFirst } from './stringHelpers';
 
 /**
  * EXPORTERA PROJEKT TILL JSON-FIL (Bevarad logik)
  */
 export const exportProjectAsJson = async (project) => {
   try {
-    const formattedName = formatName(project.name);
+    const formattedName = capitalizeFirst(project.name);
     const fileName = `${formattedName.replace(/[^a-z0-9åäöÅÄÖ]/gi, '_')}_export.json`;
     const fileUri = FileSystem.cacheDirectory + fileName;
     const projectData = JSON.stringify(project, null, 2);

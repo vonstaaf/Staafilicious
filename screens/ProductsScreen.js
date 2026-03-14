@@ -14,11 +14,13 @@ import {
   Modal,
   SafeAreaView,
   StatusBar,
-  ScrollView
+  ScrollView,
+  Image
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
+import { capitalizeFirst } from "../utils/stringHelpers";
 import { searchProducts } from "../utils/productSearch";
 import AppHeader from "../components/AppHeader";
 import { WorkaholicTheme } from "../theme";
@@ -37,15 +39,37 @@ const decimalOnly = (text) => {
   return cleaned;
 };
 
-const capitalizeFirst = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
-
 const WHOLESALERS = [
-  { id: 'local', name: 'Lager', icon: 'cube-outline' },
   { id: 'rexel', name: 'Rexel', icon: 'flash-outline' },
-  { id: 'solar', name: 'Solar', icon: 'sunny-outline' },
   { id: 'ahlsell', name: 'Ahlsell', icon: 'construct-outline' },
+  { id: 'solar', name: 'Solar', icon: 'sunny-outline' },
   { id: 'elektroskandia', name: 'E-skandia', icon: 'bulb-outline' }
 ];
+
+/**
+ * 🖼 SAFE IMAGE KOMPONENT
+ * Hanterar 404-fel för de 134 000 "gissade" länkarna.
+ * Om bilden inte finns laddas placeholder-ikonen istället.
+ */
+const SafeImage = ({ uri, style, placeholderStyle, iconSize = 28 }) => {
+  const [error, setError] = useState(false);
+
+  if (!uri || error) {
+    return (
+      <View style={[styles.productImagePlaceholder, placeholderStyle]}>
+        <Ionicons name="cube-outline" size={iconSize} color="#CCC" />
+      </View>
+    );
+  }
+
+  return (
+    <Image 
+      source={{ uri }} 
+      style={style} 
+      onError={() => setError(true)}
+    />
+  );
+};
 
 // 🔑 MEMOISERAD HEADER
 const ProductsHeader = React.memo(({ 
@@ -61,8 +85,7 @@ const ProductsHeader = React.memo(({
 }) => {
 
   const handleNameChange = (v) => {
-    const formatted = v.length > 0 ? v.charAt(0).toUpperCase() + v.slice(1) : v;
-    setNewRow(s => ({ ...s, name: formatted }));
+    setNewRow(s => ({ ...s, name: capitalizeFirst(v) || v }));
   };
 
   return (
@@ -160,8 +183,7 @@ const ProductsHeader = React.memo(({
 export default function ProductsScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   
-  // 🔑 Hämta discountAgreements från Context (de 15 000 raderna)
-  const { projects, selectedProject, updateProject, allProducts, discountAgreements } = useContext(ProjectsContext);
+  const { projects, selectedProject, updateProject, discountAgreements } = useContext(ProjectsContext);
   
   const projectId = route.params?.project?.id || selectedProject?.id;
   const project = useMemo(() => {
@@ -174,12 +196,16 @@ export default function ProductsScreen({ navigation, route }) {
     purchasePrice: "",
     markup: "25", 
     quantity: "1",
+    imageUrl: null,
+    brand: null
   };
 
   const [newRow, setNewRow] = useState(initialRowState);
   const [editingIndex, setEditingIndex] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [selectedWholesaler, setSelectedWholesaler] = useState('local');
+  const [zoomImage, setZoomImage] = useState(null); 
+  
+  const [selectedWholesaler, setSelectedWholesaler] = useState('rexel');
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalSearchQuery, setModalSearchQuery] = useState("");
@@ -191,19 +217,11 @@ export default function ProductsScreen({ navigation, route }) {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (isModalVisible) {
-        if (selectedWholesaler === 'local' && allProducts) {
-          const filtered = allProducts.filter(p => 
-            p.name?.toLowerCase().includes(modalSearchQuery.toLowerCase()) || 
-            p.articleNumber?.includes(modalSearchQuery)
-          ).slice(0, 50);
-          setModalResults(filtered);
-        } else {
-          performModalSearch(modalSearchQuery);
-        }
+        performModalSearch(modalSearchQuery);
       }
     }, 150);
     return () => clearTimeout(timer);
-  }, [modalSearchQuery, selectedWholesaler, isModalVisible, allProducts]);
+  }, [modalSearchQuery, selectedWholesaler, isModalVisible]);
 
   const performModalSearch = async (text) => {
     if (text.length < 2) {
@@ -212,8 +230,8 @@ export default function ProductsScreen({ navigation, route }) {
     }
     setIsSearching(true);
     try {
-      // 🚀 Skicka med dina 15 000 rabattgrupper till sök-motorn
-      const results = await searchProducts(text, selectedWholesaler, discountAgreements);
+      const upperCaseText = text.toUpperCase();
+      const results = await searchProducts(upperCaseText, selectedWholesaler, discountAgreements);
       setModalResults(results);
     } catch (e) { 
       console.log("Sökfel:", e); 
@@ -226,7 +244,6 @@ export default function ProductsScreen({ navigation, route }) {
     if (selectedInModal.length === 0) return;
     
     const newItems = selectedInModal.map(item => {
-      // searchProducts returnerar nu det uträknade nettopriset i 'price'
       const price = parseFloat(item.price || item.purchasePrice || 0);
       const markup = 25;
       return {
@@ -236,6 +253,8 @@ export default function ProductsScreen({ navigation, route }) {
         markup: markup,
         quantity: 1,
         unitPriceOutExclVat: price * (1 + markup / 100),
+        imageUrl: item.imageUrl || null,
+        brand: item.brand || null 
       };
     });
 
@@ -265,6 +284,8 @@ export default function ProductsScreen({ navigation, route }) {
       markup: m,
       quantity: q,
       unitPriceOutExclVat: p * (1 + m / 100),
+      imageUrl: newRow.imageUrl || null,
+      brand: newRow.brand || null
     };
 
     let updated = [...currentProducts];
@@ -340,8 +361,20 @@ export default function ProductsScreen({ navigation, route }) {
           renderItem={({ item, index }) => (
             <View style={styles.productCard}>
               <View style={styles.productMain}>
+                
+                <TouchableOpacity 
+                  disabled={!item.imageUrl}
+                  onPress={() => setZoomImage(item.imageUrl)}
+                >
+                  <SafeImage 
+                    uri={item.imageUrl} 
+                    style={styles.productImage} 
+                  />
+                </TouchableOpacity>
+
                 <View style={styles.productInfo}>
-                  <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
+                  {item.brand && <Text style={styles.brandTag}>{item.brand.toUpperCase()}</Text>}
+                  <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
                   <Text style={styles.productSub}>{item.articleNumber} • {item.markup}% påslag</Text>
                 </View>
                 <View style={styles.productPriceArea}>
@@ -357,6 +390,8 @@ export default function ProductsScreen({ navigation, route }) {
                         purchasePrice: String(item.purchasePrice || 0),
                         markup: String(item.markup || 0),
                         quantity: String(item.quantity || 1),
+                        imageUrl: item.imageUrl || null,
+                        brand: item.brand || null
                     });
                     setEditingIndex(index);
                  }} style={styles.actionBtn}>
@@ -374,14 +409,31 @@ export default function ProductsScreen({ navigation, route }) {
         />
       </KeyboardAvoidingView>
 
+      <Modal visible={!!zoomImage} transparent={true} animationType="fade">
+        <TouchableOpacity 
+          style={styles.zoomOverlay} 
+          activeOpacity={1} 
+          onPress={() => setZoomImage(null)}
+        >
+          <View style={styles.zoomContainer}>
+            <Image source={{ uri: zoomImage }} style={styles.zoomImage} />
+            <TouchableOpacity style={styles.closeZoom} onPress={() => setZoomImage(null)}>
+              <Ionicons name="close-circle" size={40} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <Modal visible={isModalVisible} animationType="slide">
         <SafeAreaView style={{ flex: 1, backgroundColor: '#F8F9FB' }}>
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setIsModalVisible(false)} style={styles.modalCloseBtn}>
                 <Ionicons name="close" size={24} color="#1C1C1E" />
               </TouchableOpacity>
+              
               <Text style={styles.modalTitle}>Materialsök</Text>
-              <View style={{width: 40}} />
+              
+              <View style={{ width: 40 }} /> 
             </View>
 
             <View style={styles.wholesalerContainer}>
@@ -404,7 +456,7 @@ export default function ProductsScreen({ navigation, route }) {
                 <Ionicons name="search" size={20} color="#AAA" style={{marginLeft: 15}} />
                 <TextInput 
                   style={styles.modalSearchInput}
-                  placeholder={`Sök hos ${selectedWholesaler === 'local' ? 'Lager' : capitalizeFirst(selectedWholesaler)}...`}
+                  placeholder={`Sök hos ${capitalizeFirst(selectedWholesaler)}...`}
                   value={modalSearchQuery}
                   onChangeText={setModalSearchQuery}
                   autoFocus
@@ -420,8 +472,6 @@ export default function ProductsScreen({ navigation, route }) {
               renderItem={({ item }) => {
                 const itemArt = item.artNr || item.articleNumber || item.id;
                 const isSelected = selectedInModal.find(x => (x.artNr || x.articleNumber || x.id) === itemArt);
-                
-                // 🔑 Visa både brutto och netto om rabatt finns
                 const hasDiscount = item.discountPercent && parseFloat(item.discountPercent) > 0;
 
                 return (
@@ -432,7 +482,21 @@ export default function ProductsScreen({ navigation, route }) {
                       else setSelectedInModal([...selectedInModal, item]);
                     }}
                   >
+                    
+                    <TouchableOpacity 
+                      disabled={!item.imageUrl}
+                      onPress={() => setZoomImage(item.imageUrl)}
+                    >
+                      <SafeImage 
+                        uri={item.imageUrl} 
+                        style={styles.resultImage} 
+                        placeholderStyle={{ width: 55, height: 55 }}
+                        iconSize={20}
+                      />
+                    </TouchableOpacity>
+
                     <View style={{flex: 1}}>
+                      {item.brand && <Text style={styles.resultBrand}>{item.brand}</Text>}
                       <Text style={styles.resultName}>{item.label || item.name}</Text>
                       <View style={styles.resultMetaRow}>
                         <Text style={styles.resultArt}>Art.nr: {itemArt}</Text>
@@ -442,15 +506,9 @@ export default function ProductsScreen({ navigation, route }) {
                            </View>
                         )}
                       </View>
-                      {hasDiscount && item.discountLabel && (
-                        <Text style={styles.discountGroupText} numberOfLines={1}>{item.discountLabel}</Text>
-                      )}
                     </View>
                     
                     <View style={styles.resultPriceBox}>
-                        {hasDiscount && (
-                          <Text style={styles.resultBrutto}>{formatNumber(item.bruttoPrice)}:-</Text>
-                        )}
                         <Text style={styles.resultPrice}>{formatNumber(item.price)}:-</Text>
                         <Text style={styles.resultVatInfo}>exkl. moms</Text>
                     </View>
@@ -508,8 +566,11 @@ const styles = StyleSheet.create({
   listTitle: { fontSize: 13, fontWeight: '900', color: '#8E8E93', marginBottom: 15, marginLeft: 5, letterSpacing: 1 },
   productCard: { backgroundColor: '#FFF', borderRadius: 20, marginBottom: 12, elevation: 2, overflow: 'hidden', borderWidth: 1, borderColor: '#F0F0F0' },
   productMain: { flexDirection: 'row', padding: 18, alignItems: 'center' },
+  productImage: { width: 75, height: 75, borderRadius: 12, marginRight: 15, backgroundColor: '#FFF', resizeMode: 'contain', borderWidth: 1, borderColor: '#F0F0F0' },
+  productImagePlaceholder: { width: 75, height: 75, borderRadius: 12, marginRight: 15, backgroundColor: '#F5F5F7', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EEE' },
   productInfo: { flex: 1 },
-  productName: { fontSize: 15, fontWeight: '800', color: '#1C1C1E' },
+  brandTag: { fontSize: 9, fontWeight: '900', color: WorkaholicTheme.colors.primary, marginBottom: 2 }, 
+  productName: { fontSize: 14, fontWeight: '800', color: '#1C1C1E', lineHeight: 18 },
   productSub: { fontSize: 11, color: '#AAA', marginTop: 4, fontWeight: '600' },
   productPriceArea: { alignItems: 'flex-end', marginLeft: 10 },
   productTotal: { fontSize: 16, fontWeight: '900', color: '#1C1C1E' },
@@ -518,6 +579,12 @@ const styles = StyleSheet.create({
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 6 },
   actionBtnText: { fontSize: 12, fontWeight: '800', color: WorkaholicTheme.colors.primary },
   vDivider: { width: 1, backgroundColor: '#EEE' },
+  resultImage: { width: 55, height: 55, borderRadius: 10, marginRight: 12, backgroundColor: '#FFF', resizeMode: 'contain', borderWidth: 1, borderColor: '#EEE' },
+  resultImagePlaceholder: { width: 55, height: 55, borderRadius: 10, marginRight: 12, backgroundColor: '#F5F5F7', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EEE' },
+  zoomOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
+  zoomContainer: { width: '90%', height: '70%', backgroundColor: '#FFF', borderRadius: 25, overflow: 'hidden', position: 'relative', padding: 20 },
+  zoomImage: { flex: 1, width: '100%', height: '100%', resizeMode: 'contain' },
+  closeZoom: { position: 'absolute', top: -50, right: 0, left: 0, alignItems: 'center' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#EEE' },
   modalCloseBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F5F5F7', justifyContent: 'center', alignItems: 'center' },
   modalTitle: { fontSize: 18, fontWeight: '900', color: '#1C1C1E' },
@@ -531,14 +598,13 @@ const styles = StyleSheet.create({
   modalSearchInput: { flex: 1, padding: 15, fontSize: 16, fontWeight: '700', color: '#1C1C1E' },
   resultCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 18, borderRadius: 18, marginBottom: 10, elevation: 1 },
   resultCardSelected: { backgroundColor: '#F0F7FF', borderWidth: 1, borderColor: WorkaholicTheme.colors.primary },
+  resultBrand: { fontSize: 10, fontWeight: '900', color: '#AAA', marginBottom: 2 },
   resultName: { fontSize: 14, fontWeight: '800', color: '#333', marginBottom: 4 },
   resultMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   resultArt: { fontSize: 11, color: '#999', fontWeight: '600' },
   discountBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   discountBadgeText: { fontSize: 9, fontWeight: '900', color: '#2E7D32' },
-  discountGroupText: { fontSize: 10, color: '#AAA', fontWeight: '600', marginTop: 4 },
   resultPriceBox: { alignItems: 'flex-end', marginRight: 15 },
-  resultBrutto: { fontSize: 11, color: '#AAA', textDecorationLine: 'line-through', marginBottom: 2 },
   resultPrice: { fontSize: 15, fontWeight: '900', color: '#1C1C1E' },
   resultVatInfo: { fontSize: 8, color: '#CCC', fontWeight: '700', marginTop: 1 },
   modalFooter: { padding: 20, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#EEE' },

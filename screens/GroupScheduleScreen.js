@@ -7,6 +7,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
+import { capitalizeFirst } from "../utils/stringHelpers";
 import { WorkaholicTheme } from "../theme";
 import { db, auth } from "../firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -280,7 +281,7 @@ export default function GroupScheduleScreen({ navigation }) {
   };
 
   const handleLabelChange = useCallback((text, id) => {
-    const formatted = text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+    const formatted = capitalizeFirst(text) || text;
     setRows(prevRows => prevRows.map(r => r.id === id ? {...r, label: formatted} : r));
   }, []);
 

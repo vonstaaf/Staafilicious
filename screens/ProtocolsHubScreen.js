@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WorkaholicTheme } from "../theme";
 import AppHeader from "../components/AppHeader";
 import { auth, db } from "../firebaseConfig";
+import { formatProjectName } from "../utils/stringHelpers";
 import { doc, onSnapshot } from "firebase/firestore";
 
 // --- SKARPA MALLAR BASERADE PÅ DIN UPPLADDADE DOKUMENTATION (EIO/IN) ---
@@ -101,7 +102,7 @@ export default function ProtocolsHubScreen({ route, navigation }) {
   if (loading) return <View style={styles.center}><ActivityIndicator color={WorkaholicTheme.colors.primary} /></View>;
 
   // Formatera projektnamnet med stor begynnelsebokstav ifall det saknas
-  const projectName = project?.name ? project.name.charAt(0).toUpperCase() + project.name.slice(1) : "Välj protokoll";
+  const projectName = formatProjectName(project?.name, "Välj protokoll");
 
   return (
     <View style={styles.container}>

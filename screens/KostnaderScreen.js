@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
+import { capitalizeFirst } from "../utils/stringHelpers";
 import AppHeader from "../components/AppHeader";
 import { WorkaholicTheme } from "../theme";
 
@@ -57,8 +58,7 @@ const CostsHeader = React.memo(({
 }) => {
   
   const handleDescriptionChange = (v) => {
-    const formatted = v.length > 0 ? v.charAt(0).toUpperCase() + v.slice(1) : v;
-    setNewRow(s => ({ ...s, description: formatted }));
+    setNewRow(s => ({ ...s, description: capitalizeFirst(v) || v }));
   };
 
   return (

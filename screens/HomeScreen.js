@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ProjectsContext } from "../context/ProjectsContext";
+import { formatProjectName } from "../utils/stringHelpers";
 import { auth } from "../firebaseConfig";
 import { signOut } from "firebase/auth";
 import { WorkaholicTheme } from "../theme";
@@ -24,19 +25,13 @@ export default function HomeScreen({ navigation }) {
   const [projectName, setProjectName] = useState("");
   const [projectCode, setProjectCode] = useState("");
 
-  const formatProjectName = (text) => {
-    if (!text) return "";
-    const trimmed = text.trim();
-    // Säkerställer stor bokstav enligt dina önskemål
-    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-  };
-
   const handleCreate = async () => {
     const cleanedName = formatProjectName(projectName);
     if (cleanedName.length < 2) {
       return Alert.alert("Information", "Namnge projektet (minst 2 tecken).");
     }
     try {
+      // Skapar en unik kod för projektet
       const code = Math.random().toString(36).substring(2, 10).toUpperCase();
       await createProject(cleanedName, code);
       setProjectName("");
@@ -87,19 +82,29 @@ export default function HomeScreen({ navigation }) {
                 <View style={styles.statusDot} />
                 <Text style={styles.statusText}>AKTIVT JUST NU</Text>
               </View>
-              <TouchableOpacity onPress={() => navigation.navigate("MainTabs")}>
-                <Text style={styles.changeText}>BYT PROJEKT</Text>
+              
+              {/* 🔑 Knapp för att byta projekt genom att navigera till listan */}
+              <TouchableOpacity onPress={() => navigation.navigate("Projects")}>
+              <Text style={styles.changeText}>BYT PROJEKT</Text>
               </TouchableOpacity>
             </View>
+
             <Text style={styles.projectName}>{selectedProject.name.toUpperCase()}</Text>
             
             <View style={styles.shortcutRow}>
-              {/* 🔑 Uppdaterad navigering med rätt rutt-namn och projekt-parameter */}
-              <TouchableOpacity style={styles.shortcutBtn} onPress={() => navigation.navigate("InspectionScreen", { project: selectedProject })}>
+              {/* Genväg till Egenkontroll - Mallväljaren triggas inuti InspectionScreen */}
+              <TouchableOpacity 
+                style={styles.shortcutBtn} 
+                onPress={() => navigation.navigate("InspectionScreen", { project: selectedProject })}
+              >
                 <Ionicons name="shield-checkmark" size={20} color={WorkaholicTheme.colors.primary} />
                 <Text style={styles.shortcutText}>Egenkontroll</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.shortcutBtn} onPress={() => navigation.navigate("GroupSchedule", { project: selectedProject })}>
+
+              <TouchableOpacity 
+                style={styles.shortcutBtn} 
+                onPress={() => navigation.navigate("GroupSchedule", { project: selectedProject })}
+              >
                 <Ionicons name="list" size={20} color={WorkaholicTheme.colors.primary} />
                 <Text style={styles.shortcutText}>Gruppschema</Text>
               </TouchableOpacity>
@@ -115,7 +120,7 @@ export default function HomeScreen({ navigation }) {
           </View>
         )}
 
-        {/* INPUTS */}
+        {/* INPUTS FÖR NYA PROJEKT */}
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>NYTT PROJEKT</Text>
           <View style={styles.inputRow}>

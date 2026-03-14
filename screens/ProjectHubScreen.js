@@ -4,12 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WorkaholicTheme } from '../theme';
 import AppHeader from '../components/AppHeader';
-
-// Hjälpfunktion för stor bokstav
-const capitalizeFirst = (text) => {
-  if (!text) return "";
-  return text.charAt(0).toUpperCase() + text.slice(1);
-};
+import { capitalizeFirst } from '../utils/stringHelpers';
 
 export default function ProjectHubScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();

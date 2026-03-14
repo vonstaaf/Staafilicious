@@ -4,13 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WorkaholicTheme } from '../theme';
 import AppHeader from '../components/AppHeader';
+import { formatProjectName } from '../utils/stringHelpers';
 
 export default function FinanceMaterialHub({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { project } = route.params || {};
-
-  // Vi formaterar namnet så det följer din regel om stor bokstav
-  const formatName = (name) => name ? name.charAt(0).toUpperCase() + name.slice(1) : "PROJEKT";
 
   const TILES = [
     {
@@ -46,7 +44,7 @@ export default function FinanceMaterialHub({ navigation, route }) {
       
       <AppHeader 
         title="EKONOMI & MATERIAL" 
-        subTitle={formatName(project?.name)} 
+        subTitle={formatProjectName(project?.name, "PROJEKT")} 
         navigation={navigation} 
       />
 

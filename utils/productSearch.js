@@ -1,148 +1,155 @@
+import { collection, query, where, getDocs, limit, orderBy, startAt, endAt } from "firebase/firestore";
+import { capitalizeFirst } from "./stringHelpers";
 import { ref, get, update } from "firebase/database"; 
 import { getAuth } from "firebase/auth";
-import { rtdb } from "../firebaseConfig"; 
-
-// --- MINNES-CACHE ---
-let cachedProducts = null;
-let isFetching = false;
+import { db, rtdb } from "../firebaseConfig"; 
 
 /**
- * SAMMANFOGAD & OPTIMERAD SÖKNING:
- * Nu med Turbo-prestanda och robust pris-lookup.
+ * 🛠 HJÄLPFUNKTION: Fixar teckenkodning (Å, Ä, Ö)
+ * Räddar trasiga tecken (fyrkanter med X) från grossisternas databaser.
  */
-export const searchProducts = async (searchQuery, wholesalerId = 'local', userDiscounts = null) => {
+const fixEncoding = (str) => {
+  if (!str) return "";
+  
+  let fixed = str;
+  
+  // 1. Trolla bort "spöktecknet" (fyrkanten) som hamnat direkt efter ett korrekt Å, Ä eller Ö
+  fixed = fixed.replace(/([ÅÄÖåäö])[^\x00-\x7FÅÄÖåäö\s\-\.\,\/]/g, '$1');
+
+  // 2. Om tecknet står ensamt och saknar bokstav (t.ex. V[fyrkant]GG)
+  return fixed.replace(/[^\x00-\x7FÅÄÖåäö\s\-\.\,\/]/g, (match, offset, fullString) => {
+    const prev = fullString.charAt(offset - 1)?.toUpperCase();
+    const next = fullString.charAt(offset + 1)?.toUpperCase();
+    
+    if (prev === 'P' && (next === ' ' || next === 'S')) return 'Å'; // PÅ
+    if (prev === 'F' && next === 'R') return 'Å'; // FRÅN
+    if (prev === 'V') return 'Ä'; // V_GG -> VÄGG
+    if (prev === 'L') return 'Ä'; // REL_ -> RELÄ
+    if (prev === 'S' && next === 'S') return 'Ä'; // MÄSSING
+    if (prev === 'R' && next === 'R') return 'Ö'; // R_R -> RÖR
+    if (prev === 'D' && next === 'S') return 'Ö'; // D_SA -> DOSA
+    
+    return ''; 
+  });
+};
+
+export const searchProducts = async (searchQuery, selectedWholesaler = 'rexel', userDiscounts = null) => {
   if (!searchQuery || searchQuery.length < 2) return [];
   
-  const term = searchQuery.toLowerCase().trim();
+  const term = searchQuery.trim(); 
   const auth = getAuth();
   const user = auth.currentUser;
 
+  // Dynamisk kollektion baserat på vald grossist
+  const collectionName = selectedWholesaler === 'local' ? 'articles' : `price_list_${selectedWholesaler}`;
+
   try {
-    // 1. Spärr: Om vi redan hämtar data, vänta istället för att starta ny hämtning
-    if (!cachedProducts && isFetching) {
-      await new Promise(res => setTimeout(res, 800));
-      return searchProducts(searchQuery, wholesalerId, userDiscounts);
+    const articlesRef = collection(db, collectionName);
+    let q;
+
+    const isNumberSearch = /^\d+$/.test(term);
+
+    if (isNumberSearch) {
+      // Sök på articleNumber
+      q = query(
+        articlesRef,
+        orderBy('articleNumber'),
+        startAt(term),
+        endAt(term + '\uf8ff'),
+        limit(40)
+      );
+    } else {
+      // Sök på namn (Versaler för att matcha databasen)
+      const upperTerm = term.toUpperCase();
+      q = query(
+        articlesRef,
+        orderBy('name'),
+        startAt(upperTerm),
+        endAt(upperTerm + '\uf8ff'),
+        limit(40)
+      );
     }
 
-    // 2. Hämta och bygg cache (endast vid första sökningen)
-    if (!cachedProducts) {
-      isFetching = true;
-      console.log("🔍 Firebase: Hämtar produktkatalogen (184k rader)...");
-      const productsRef = ref(rtdb, 'products');
-      const snapshot = await get(productsRef);
+    const querySnapshot = await getDocs(q);
+    const results = [];
+
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      const artNum = data.articleNumber || doc.id;
       
-      if (!snapshot.exists()) {
-        cachedProducts = [];
-        isFetching = false;
-        return [];
-      }
+      // Tvätta namnet från trasiga tecken
+      const fixedName = fixEncoding(data.name || "Namn saknas");
 
-      const data = snapshot.val();
-      const tempArray = [];
-      
-      // Snabb-loop för att bygga sökindex
-      for (const key in data) {
-        const item = data[key];
-        let art = String(item.artNr || item.articleNumber || "-");
-        
-        // 08-fix (artiklar som börjar på noll men tappat den i db)
-        if (art.length === 5 && art.startsWith('8')) art = "0" + art;
-
-        // 🛠 FLEXIBEL PRIS-LOOKUP: Letar efter alla vanliga fältnamn (pris, brutto, price etc)
-        const rawPrice = item.price || item.pris || item.brutto || item.purchasePrice || 0;
-        const safePrice = typeof rawPrice === 'string' 
-          ? parseFloat(rawPrice.replace(',', '.')) 
-          : parseFloat(rawPrice);
-
-        tempArray.push({
-          ...item,
-          dbKey: key,
-          label: item.label || item.name || item.beskrivning || "Namn saknas",
-          artNr: art, 
-          originalPrice: isNaN(safePrice) ? 0 : safePrice,
-          rabattkod: String(item.rabattkod || item.rg || item.rK || "").trim(),
-          // Blixtsnabb söksträng
-          _s: (art + " " + (item.label || item.name || "")).toLowerCase()
-        });
-      }
-
-      cachedProducts = tempArray;
-      isFetching = false;
-      console.log(`✅ Cache redo: ${cachedProducts.length} artiklar.`);
-    }
-
-    // 3. ⚡ BLIXTSNABB FILTRERING
-    // Vi filtrerar först ut alla som matchar, utan att räkna priser än
-    let matches = [];
-    for (let i = 0; i < cachedProducts.length; i++) {
-      if (cachedProducts[i]._s.includes(term)) {
-        matches.push(cachedProducts[i]);
-        if (matches.length > 100) break; // Avbryt tidigt för prestanda
-      }
-    }
-
-    // 4. ✂️ SLICE FÖRE MAP (Detta gör det "sjukt snabbt")
-    // Vi räknar bara rabatter på de 40 artiklar som faktiskt visas.
-    const limitedResults = matches.slice(0, 40);
-
-    // 5. 🛠 APPLICERA RABATTER
-    const myAgreements = (wholesalerId !== 'local' && userDiscounts) ? userDiscounts[wholesalerId] : null;
-
-    return limitedResults.map(item => {
-      let discountPercent = 0;
-      let discountLabel = "Generell rabatt";
-
-      if (wholesalerId !== 'local' && user && myAgreements) {
-        // Kolla efter exakt träff i dina 15 000 rabattgrupper
-        const agreement = myAgreements[item.rabattkod];
-        if (agreement) {
-          const pVal = agreement.p || agreement.percent || 0;
-          discountPercent = parseFloat(pVal);
-          discountLabel = agreement.l || agreement.label || item.rabattkod;
-        } else {
-          // Fallback: Generella rabattsatser per grossist
-          if (wholesalerId === 'rexel') discountPercent = 0.15;
-          if (wholesalerId === 'solar') discountPercent = 0.10;
-          if (wholesalerId === 'ahlsell') discountPercent = 0.08;
-        }
-      }
-
-      const brutto = item.originalPrice || 0;
-      const netto = brutto * (1 - discountPercent);
-
-      return {
-        ...item,
-        price: netto.toFixed(2), // Netto-priset som visas i listan
-        bruttoPrice: brutto.toFixed(2),
-        discountPercent: (discountPercent * 100).toFixed(0),
-        discountLabel: discountLabel,
-        wholesalerName: wholesalerId.charAt(0).toUpperCase() + wholesalerId.slice(1),
-        isWholesalerPrice: wholesalerId !== 'local'
+      // --- VIKTIGT: Här bygger vi objektet som skickas till appen ---
+      const resultItem = {
+        dbKey: doc.id,
+        eNumber: artNum,
+        label: fixedName, 
+        unit: data.unit || "st",
+        artNr: artNum,
+        imageUrl: data.imageUrl || null, // Hämtar in bilden från prislistan
+        brand: data.brand || null,       // Hämtar in varumärket från prislistan
+        prices: {} 
       };
+
+      if (data.purchasePrice !== undefined) {
+        let discountPercent = 0.15; // Standard fallback
+        let discountLabel = `Generell rabatt (${selectedWholesaler})`;
+        
+        if (user && userDiscounts && userDiscounts[selectedWholesaler]) {
+           const agreements = userDiscounts[selectedWholesaler];
+           
+           const itemSpecific = agreements[artNum];
+           const groupSpecific = agreements[data.discountGroup];
+
+           const finalAgreement = itemSpecific || groupSpecific;
+
+           if (finalAgreement) {
+             discountPercent = parseFloat(finalAgreement.p || finalAgreement.percent || 0);
+             discountLabel = finalAgreement.l || finalAgreement.label || (itemSpecific ? "Artikelrabatt" : data.discountGroup);
+           }
+        }
+
+        const brutto = parseFloat(data.purchasePrice) || 0;
+        const netto = brutto * (1 - discountPercent);
+
+        resultItem.prices[selectedWholesaler] = {
+          netPrice: netto.toFixed(2),
+          bruttoPrice: brutto.toFixed(2),
+          discountPercent: (discountPercent * 100).toFixed(0),
+          discountLabel: discountLabel,
+          articleNumber: artNum,
+          discountGroup: data.discountGroup
+        };
+
+        // Bakåtkompatibilitet för UI (ProductsScreen.js)
+        resultItem.price = netto.toFixed(2);
+        resultItem.bruttoPrice = brutto.toFixed(2);
+        resultItem.discountPercent = (discountPercent * 100).toFixed(0);
+        resultItem.discountLabel = discountLabel;
+        resultItem.wholesalerName = capitalizeFirst(selectedWholesaler);
+        resultItem.isWholesalerPrice = true;
+      }
+
+      results.push(resultItem);
     });
 
+    return results;
+
   } catch (error) {
-    isFetching = false;
-    console.error("❌ Sökfel:", error);
+    console.error(`❌ Firestore Sökfel i ${collectionName}:`, error);
     return [];
   }
 };
 
-/**
- * REPARATIONSFUNKTION:
- */
 export const repairDatabaseArtNumbers = async () => {
-  const db = rtdb; 
-  const productsRef = ref(db, 'products');
-
+  const productsRef = ref(rtdb, 'products');
   try {
     const snapshot = await get(productsRef);
     if (!snapshot.exists()) return { success: false };
-
     const data = snapshot.val();
     const updates = {};
     let count = 0;
-
     Object.keys(data).forEach(key => {
       let art = String(data[key].artNr || "");
       if (art.length === 5 && art.startsWith('8')) {
@@ -150,10 +157,8 @@ export const repairDatabaseArtNumbers = async () => {
         count++;
       }
     });
-
     if (count > 0) {
-      await update(ref(db), updates);
-      cachedProducts = null;
+      await update(ref(rtdb), updates);
       return { success: true, count };
     }
     return { success: true, count: 0 };

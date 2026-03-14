@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WorkaholicTheme } from '../theme';
 import { ProjectsContext } from '../context/ProjectsContext';
+import { capitalizeFirst } from '../utils/stringHelpers';
 
 // 🚀 Lokala raketen
 const appLogo = require('../assets/icon3.png');
@@ -12,7 +13,7 @@ export default function AppHeader({ title, navigation, rightIcon, onRightPress, 
   const insets = useSafeAreaInsets();
   const { companyData } = useContext(ProjectsContext);
   
-  const formattedTitle = title ? title.charAt(0).toUpperCase() + title.slice(1) : "";
+  const formattedTitle = capitalizeFirst(title);
   const hasExternalLogo = companyData?.logoUrl && companyData.logoUrl.startsWith('http');
 
   return (

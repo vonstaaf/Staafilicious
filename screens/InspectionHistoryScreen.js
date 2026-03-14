@@ -10,6 +10,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 
 // 🔑 IMPORT (Använder nu den uppdaterade PDF-motorn)
 import { handleInspectionPdf } from "../utils/pdfActions";
+import { formatProjectName } from "../utils/stringHelpers";
 
 export default function InspectionHistoryScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -51,8 +52,6 @@ export default function InspectionHistoryScreen({ navigation }) {
     );
   }
 
-  const formatProjectName = (name) => name ? name.charAt(0).toUpperCase() + name.slice(1) : "Projekt";
-
   const onGeneratePdf = async (historyData) => {
     if (!historyData) return;
     setIsProcessing(true);
@@ -70,7 +69,7 @@ export default function InspectionHistoryScreen({ navigation }) {
   const openPdfModal = (item) => {
     setSelectedHistoryItem(item);
     const dateStr = new Date(item.date).toLocaleDateString('sv-SE');
-    const projectName = formatProjectName(selectedProject?.name);
+    const projectName = formatProjectName(selectedProject?.name, "Projekt");
     const cleanDesc = item.description ? item.description.replace(/\s+/g, '_') : 'Kontroll';
     setCustomPdfName(`${projectName}_${cleanDesc}_${dateStr}`);
     setIsPdfModalVisible(true);

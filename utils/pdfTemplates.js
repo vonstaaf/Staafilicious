@@ -1,4 +1,5 @@
 import { WorkaholicTheme } from "../theme";
+import { formatProjectName } from "./stringHelpers";
 
 /**
  * GEMENSAM STANDARD HEADER (PUNKT 2, 3, 7)
@@ -43,7 +44,7 @@ const getStandardHeader = (d, appLogoHeight = 65) => {
 export const getInspectionHtml = (d) => {
   const dateStr = d.date ? new Date(d.date).toLocaleDateString('sv-SE') : new Date().toLocaleDateString('sv-SE');
   const sections = [...new Set((d.items || []).map(i => i.section))];
-  const projectName = d.projectName ? d.projectName.charAt(0).toUpperCase() + d.projectName.slice(1) : "Projekt";
+  const projectName = formatProjectName(d.projectName, "Projekt");
 
   return `
   <html>
@@ -111,7 +112,7 @@ export const getSettlementHtml = (project, companyData, companyLogo, options) =>
   
   const totalExclVat = materialTotal + workTotal;
   const moms = totalExclVat * 0.25;
-  const projectName = project.name ? project.name.charAt(0).toUpperCase() + project.name.slice(1) : "Projekt";
+  const projectName = formatProjectName(project.name, "Projekt");
 
   return `
   <html>
@@ -180,7 +181,7 @@ export const getSettlementHtml = (project, companyData, companyLogo, options) =>
  */
 export const getMaterialHtml = (data) => {
   const { projectName, items, companyData, companyLogo, appLogo } = data;
-  const formattedProjectName = projectName ? projectName.charAt(0).toUpperCase() + projectName.slice(1) : "Projekt";
+  const formattedProjectName = formatProjectName(projectName, "Projekt");
 
   return `
   <html>

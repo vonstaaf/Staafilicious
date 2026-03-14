@@ -6,6 +6,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProjectsContext } from "../context/ProjectsContext";
+import { capitalizeFirst } from "../utils/stringHelpers";
 import { WorkaholicTheme } from "../theme";
 import Button from "../components/Button";
 
@@ -34,8 +35,7 @@ export default function ProjectListScreen({ navigation }) {
 
   // --- LOGIK ---
   const handleNameChange = (text) => {
-    const formatted = text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : "";
-    setProjectNameInput(formatted);
+    setProjectNameInput(capitalizeFirst(text) || text);
   };
 
   const renderProjectItem = ({ item }) => {
