@@ -111,7 +111,7 @@ export default function HomeScreen({ navigation }) {
                 onPress={() => navigation.navigate("GroupSchedule", { project: selectedProject })}
               >
                 <Ionicons name="list" size={20} color={theme.colors.primary} />
-                <Text style={styles.shortcutText}>Gruppschema</Text>
+                <Text style={styles.shortcutText}>Projektschema</Text>
               </TouchableOpacity>
             </View>
           </View>
