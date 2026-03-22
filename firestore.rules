@@ -1,0 +1,171 @@
+rules_version = '2';
+// Firestore Security Rules för Workaholic (staafilicious)
+// Deploy: firebase deploy --only firestore
+// Kräver att Firebase CLI är initierad (firebase init firestore) och projektet kopplat.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ——— Användare: endast egen dokument
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Mallar under användare (users/{uid}/templates)
+      match /templates/{templateId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // ——— Projekt (groups): skapa som inloggad; läsa/uppdatera/radera endast som medlem
+    match /groups/{groupId} {
+      allow create: if request.auth != null;
+      // Läs: medlem i projektet, eller företagsadmin för projekt med companyId
+      allow read: if request.auth != null && (
+        request.auth.uid in resource.data.members
+        || (
+          'companyId' in resource.data
+          && resource.data.companyId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        )
+      );
+      allow update, delete: if request.auth != null
+        && request.auth.uid in resource.data.members;
+    }
+
+    // ——— Protokoll under projekt (projects/{projectId}/protocols)
+    // Samma ID som groups används i appen för project.id
+    match /projects/{projectId}/protocols/{protocolId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/groups/$(projectId)).data.members;
+    }
+
+    // Använt material per projekt (groups = project) – företagsadmin via webbportalen
+    match /groups/{groupId}/used_materials/{docId} {
+      allow read, write: if request.auth != null
+        && get(/databases/$(database)/documents/groups/$(groupId)).data.companyId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Digital riskanalys per projekt – företagsadmin via webbportalen
+    match /groups/{groupId}/risk_assessments/{docId} {
+      allow read, write: if request.auth != null
+        && get(/databases/$(database)/documents/groups/$(groupId)).data.companyId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Projektbilder – företagsadmin via webbportalen
+    match /groups/{groupId}/project_images/{docId} {
+      allow read, write: if request.auth != null
+        && get(/databases/$(database)/documents/groups/$(groupId)).data.companyId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Systemloggar (Workaholic Black Box) – endast server skriver via Admin SDK
+    match /system_logs/{docId} {
+      allow read, write: if false;
+    }
+
+    // ——— Rabatter per användare
+    match /userDiscounts/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ——— Globala produkter (materialregister): läs för inloggade
+    match /products/{productId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ——— Prislistor (grossister): läs för sök, skriv endast från backend/admin
+    // Lägg till fler om nya grossister används i productSearch.js
+    match /price_list_rexel/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /price_list_ahlsell/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /price_list_solar/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /price_list_elektroskandia/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ——— Lokala artiklar (vid val "local")
+    match /articles/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ——— Företag & planering (B2B): läs som medlem i företaget
+    match /companies/{companyId} {
+      allow read: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+      allow write: if false;
+
+      match /members/{memberId} {
+        allow read: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+        allow write: if false;
+      }
+
+      match /invitations/{inviteId} {
+        allow read: if request.auth != null && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId
+          || (request.auth.token.email != null && resource.data.emailLower == request.auth.token.email.lower() && resource.data.status == 'pending')
+        );
+        allow write: if false;
+      }
+
+      match /users/{userId}/scheduleBookings/{bookingId} {
+        allow read, write: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+      }
+
+      // VVS-dokumentation (tryckprovning, egenkontroll m.m.) per projekt
+      match /groups/{groupId}/documents/{documentId} {
+        allow read, write: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+      }
+
+      // Samma företagsmedlem krävs som för documents (appens snapshot-lyssnare)
+      match /groups/{groupId}/varningar/{docId} {
+        allow read, write: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+      }
+      match /groups/{groupId}/scanned_products/{docId} {
+        allow read, write: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+      }
+      match /groups/{groupId}/relationsritningar/{docId} {
+        allow read, write: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+      }
+      match /groups/{groupId}/measurements/{docId} {
+        allow read, write: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+      }
+
+      // Integrationer (Fortnox, Visma m.m.) – skrivs av backend, läs av företagsmedlemmar
+      match /integrations/{integrationId} {
+        allow read: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+        allow write: if false;
+      }
+    }
+
+    // OAuth state (CSRF-skydd) – skrivs/läses endast av backend
+    match /oauth_states/{stateId} {
+      allow read, write: if false;
+    }
+
+    // ——— Blockera allt annat som standard
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

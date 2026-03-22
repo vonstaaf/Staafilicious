@@ -5,6 +5,7 @@ import * as ScreenOrientation from "expo-screen-orientation";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "../firebaseConfig";
 import { capitalizeFirst } from "../utils/stringHelpers";
+import { rotateSignatureForPortrait } from "../utils/signatureHelpers";
 import { handleInspectionPdf } from "../utils/pdfActions";
 
 /**
@@ -166,7 +167,12 @@ export function useInspectionForm(project, routeParams, updateProject, templates
       setTimeout(async () => {
         setIsProcessing(true);
         try {
-          const fullSig = sig.startsWith("data:") ? sig : "data:image/png;base64," + sig;
+          let fullSig = sig.startsWith("data:") ? sig : "data:image/png;base64," + sig;
+          try {
+            fullSig = await rotateSignatureForPortrait(fullSig);
+          } catch {
+            // behåll original om rotation misslyckas
+          }
           const entryData = {
             id: editingHistoryId || Date.now(),
             date: editingHistoryId ? routeParams.existingData.date : new Date().toISOString(),

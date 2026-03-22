@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from "react";
+import React, { useState, useContext, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from "expo-image-picker";
 import Constants from 'expo-constants'; // 👈 Tillagd för automatisk version
-import { WorkaholicTheme } from "../theme";
+import { WorkaholicTheme, getThemeForProfession } from "../theme";
+import { mergeTheme } from "../context/ThemeContext";
 import Button from "../components/Button";
 import { auth, db } from "../firebaseConfig";
 import { updatePassword, updateProfile, signOut } from "firebase/auth";
@@ -23,6 +24,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
 import { useBadges } from "../context/BadgeContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import AppHeader from "../components/AppHeader";
+
+function profileRoleToProfessionKeys(role) {
+  if (role === "El") return ["el"];
+  if (role === "Rör") return ["vvs"];
+  if (role === "Bygg") return ["bygg"];
+  return [];
+}
 
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -43,6 +52,11 @@ export default function ProfileScreen({ navigation }) {
   const [zipCity, setZipCity] = useState("");
   const [website, setWebsite] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const profileAccentTheme = useMemo(
+    () => mergeTheme(WorkaholicTheme, getThemeForProfession(profileRoleToProfessionKeys(profession))),
+    [profession]
+  );
 
   useEffect(() => {
     fetchUserData();
@@ -124,24 +138,23 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#F8F9FB" }}>
+      <AppHeader
+        showBackButton={false}
+        hideTitle={true}
+        useBrandLogo
+        navigation={navigation}
+        rightIcon="settings-outline"
+        onRightPress={() => navigation.navigate("Settings")}
+      />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-        <ScrollView 
-          // 🔑 FIX: Stavfel "dingTop" rättat till "paddingTop" och ökad bottenmarginal
-          contentContainerStyle={{ 
-            padding: 20, 
-            paddingTop: insets.top - 15, 
-            paddingBottom: insets.bottom + 130 
+        <ScrollView
+          contentContainerStyle={{
+            padding: 20,
+            paddingTop: 8,
+            paddingBottom: insets.bottom + 130,
           }}
           showsVerticalScrollIndicator={false}
         >
-          
-          <View style={styles.topHeader}>
-            <View style={{ width: 24 }} /> 
-            <TouchableOpacity onPress={() => navigation.navigate("Settings")} style={styles.settingsHeaderBtn}>
-               <Ionicons name="settings-outline" size={24} color={WorkaholicTheme.colors.primary} />
-            </TouchableOpacity>
-          </View>
-
           <View style={styles.header}>
             <TouchableOpacity onPress={pickLogo} style={styles.logoWrapper}>
               {currentLogo ? (
@@ -149,7 +162,9 @@ export default function ProfileScreen({ navigation }) {
               ) : (
                 <View style={styles.placeholderLogo}><Ionicons name="camera" size={30} color="#BBB" /></View>
               )}
-              <View style={styles.editBadge}><Ionicons name="pencil" size={12} color="#FFF" /></View>
+              <View style={[styles.editBadge, { backgroundColor: profileAccentTheme.colors.primary }]}>
+                <Ionicons name="pencil" size={12} color="#FFF" />
+              </View>
             </TouchableOpacity>
             <Text style={styles.userName}>{displayName || "Användare"}</Text>
             <Text style={styles.userEmail}>{email}</Text>
@@ -177,7 +192,7 @@ export default function ProfileScreen({ navigation }) {
               onPress={() => navigation.navigate("Settings")}
             >
               <View style={styles.settingsIconBox}>
-                <Ionicons name="options-outline" size={22} color={WorkaholicTheme.colors.primary} />
+                <Ionicons name="options-outline" size={22} color={profileAccentTheme.colors.primary} />
               </View>
               <View style={{flex: 1, marginLeft: 12}}>
                 <Text style={styles.settingsLabel}>Grossist-kopplingar & Logo</Text>
@@ -195,7 +210,13 @@ export default function ProfileScreen({ navigation }) {
                 return (
                   <TouchableOpacity 
                     key={role} 
-                    style={[styles.profBtn, isActive && styles.profBtnActive]}
+                    style={[
+                      styles.profBtn,
+                      isActive && {
+                        backgroundColor: profileAccentTheme.colors.primary,
+                        borderColor: profileAccentTheme.colors.primary,
+                      },
+                    ]}
                     onPress={() => setProfession(role)}
                     activeOpacity={0.7}
                   >
@@ -287,13 +308,11 @@ export default function ProfileScreen({ navigation }) {
 
 // ... Styles är oförändrade ...
 const styles = StyleSheet.create({
-  topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
-  settingsHeaderBtn: { padding: 5 },
   header: { alignItems: "center", marginBottom: 20 },
   logoWrapper: { marginBottom: 15 },
   logo: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: "#FFF" },
   placeholderLogo: { width: 100, height: 100, borderRadius: 50, backgroundColor: "#E1E1E1", justifyContent: 'center', alignItems: 'center' },
-  editBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: WorkaholicTheme.colors.primary, borderRadius: 15, width: 30, height: 30, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
+  editBadge: { position: 'absolute', bottom: 0, right: 0, borderRadius: 15, width: 30, height: 30, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
   userName: { fontSize: 22, fontWeight: "900", color: "#333" },
   userEmail: { fontSize: 14, color: "#888", fontWeight: "600" },
   statsRow: { flexDirection: "row", justifyContent: "space-around", marginBottom: 25, backgroundColor: "#FFF", padding: 20, borderRadius: 20, elevation: 2 },
@@ -304,7 +323,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 11, fontWeight: "800", color: "#BBB", marginBottom: 15, letterSpacing: 1 },
   professionRow: { flexDirection: 'row', justifyContent: 'space-between' },
   profBtn: { flex: 1, backgroundColor: '#F5F5F5', marginHorizontal: 5, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#EEE' },
-  profBtnActive: { backgroundColor: WorkaholicTheme.colors.primary, borderColor: WorkaholicTheme.colors.primary },
   profText: { marginTop: 5, fontWeight: '800', fontSize: 12, color: '#666' },
   inputWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: "#F2F2F7", borderRadius: 12, paddingHorizontal: 12, marginBottom: 10 },
   input: { flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 15, fontWeight: "600", color: "#333" },

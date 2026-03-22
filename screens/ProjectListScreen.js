@@ -1,17 +1,28 @@
 import React, { useContext, useState, useMemo } from "react";
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput,
-  Modal, StatusBar, Alert, Share
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  Modal,
+  StatusBar,
+  Alert,
+  Share,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProjectsContext } from "../context/ProjectsContext";
 import { capitalizeFirst } from "../utils/stringHelpers";
+import { useTheme } from "../context/ThemeContext";
 import { WorkaholicTheme } from "../theme";
 import Button from "../components/Button";
+import AppHeader from "../components/AppHeader";
 
 export default function ProjectListScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const { 
     projects, updateProject, deleteProject, 
     setSelectedProject, selectedProject, archiveProject 
@@ -42,7 +53,7 @@ export default function ProjectListScreen({ navigation }) {
     const isSelected = selectedProject?.id === item.id;
     return (
       <TouchableOpacity 
-        style={[styles.projectCard, isSelected && styles.selectedCard]} 
+        style={[styles.projectCard, isSelected && styles.selectedCard, isSelected && { backgroundColor: theme.colors.primary }]} 
         onPress={() => {
           setSelectedProject(item);
           navigation.navigate("ProjectHub", { project: item });
@@ -51,7 +62,7 @@ export default function ProjectListScreen({ navigation }) {
       >
         <View style={styles.cardInfo}>
           <View style={[styles.iconCircle, isSelected && styles.selectedIconCircle]}>
-            <Ionicons name="briefcase" size={20} color={isSelected ? "#FFF" : WorkaholicTheme.colors.primary} />
+            <Ionicons name="briefcase" size={20} color={isSelected ? "#FFF" : theme.colors.primary} />
           </View>
           <View style={styles.textContainer}>
             <Text style={[styles.projectName, isSelected && styles.selectedText]} numberOfLines={1}>{item.name}</Text>
@@ -80,23 +91,15 @@ export default function ProjectListScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      
-      {/* SLIMMAD HEADER */}
-      <View style={[styles.header, { paddingTop: insets.top - 15 }]}>
-        <View>
-          <Text style={styles.brandText}>MINA <Text style={{color: WorkaholicTheme.colors.primary}}>PROJEKT</Text></Text>
-          <View style={styles.activeStatusRow}>
-            <View style={styles.statusDot} />
-            <Text style={styles.activeLabel}>
-              AKTIVT: {selectedProject ? selectedProject.name.toUpperCase() : "INGET VALT"}
-            </Text>
-          </View>
-        </View>
-        <TouchableOpacity style={styles.archiveTopBtn} onPress={() => navigation.navigate("Archive")}>
-          <Ionicons name="archive-outline" size={22} color={WorkaholicTheme.colors.primary} />
-        </TouchableOpacity>
-      </View>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <AppHeader
+        title="MINA PROJEKT"
+        subTitle={selectedProject ? selectedProject.name : "Inget valt"}
+        showBackButton={false}
+        navigation={navigation}
+        rightIcon="archive-outline"
+        onRightPress={() => navigation.navigate("Archive")}
+      />
 
       <FlatList 
         data={filteredProjects} 
@@ -169,8 +172,8 @@ export default function ProjectListScreen({ navigation }) {
                   { text: "Radera", style: "destructive", onPress: () => { deleteProject(activeMenuProject.id); setOptionsVisible(false); } }
                 ]);
             }}>
-              <Ionicons name="trash-outline" size={24} color={WorkaholicTheme.colors.error} />
-              <Text style={[styles.menuOptionText, {color: WorkaholicTheme.colors.error}]}>Ta bort permanent</Text>
+              <Ionicons name="trash-outline" size={24} color={theme.colors.error} />
+              <Text style={[styles.menuOptionText, {color: theme.colors.error}]}>Ta bort permanent</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -232,7 +235,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF', padding: 16, borderRadius: 20, marginBottom: 12, 
     elevation: 2, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 5 
   },
-  selectedCard: { backgroundColor: WorkaholicTheme.colors.primary },
+  selectedCard: {},
   cardInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   iconCircle: { width: 44, height: 44, borderRadius: 14, backgroundColor: "#F0F0FF", justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   selectedIconCircle: { backgroundColor: "rgba(255,255,255,0.2)" },

@@ -1,7 +1,7 @@
-const { getSentryExpoConfig } = require("@sentry/react-native/metro");
+const { getDefaultConfig } = require("expo/metro-config");
 
 /** @type {import('expo/metro-config').MetroConfig} */
-const config = getSentryExpoConfig(__dirname);
+const config = getDefaultConfig(__dirname);
 
 // 1. Lägg till stöd för Firebase JS SDK (.mjs filer)
 // Vi kollar först så att den inte redan finns för att undvika dubbletter

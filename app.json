@@ -2,8 +2,9 @@
   "expo": {
     "name": "Workaholic",
     "slug": "staafilicious-frontend",
-    "version": "1.0.4",
+    "version": "1.0.78",
     "orientation": "portrait",
+    "scheme": "workaholic",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
@@ -15,16 +16,16 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.staafilicious.workaholic",
-      "buildNumber": "25",
+      "buildNumber": "28",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Appen behöver tillgång till dina bilder för att du ska kunna ladda upp din företagslogotyp och dokumentera dina Projekt.",
-        "NSCameraUsageDescription": "Appen behöver tillgång till kameran för att du ska kunna ta foton direkt till dina Projekt.",
+        "NSCameraUsageDescription": "Workaholic behöver tillgång till kameran för att kunna fota och dokumentera arbetet direkt i Projektet.",
+        "NSPhotoLibraryUsageDescription": "Workaholic behöver tillgång till ditt bildbibliotek för att du ska kunna ladda upp sparade bilder till Projektet.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.vonstaaf.staafiliciousfrontend",
-      "versionCode": 8,
+      "versionCode": 11,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#121212"
@@ -47,19 +48,17 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Tillåt Workaholic att använda dina bilder för att välja en logotyp och dokumentera dina Projekt.",
-          "cameraPermission": "Tillåt Workaholic att använda kameran för att ta bilder till dina Projekt."
+          "photosPermission": "Workaholic behöver tillgång till ditt bildbibliotek för att du ska kunna ladda upp sparade bilder till Projektet.",
+          "cameraPermission": "Workaholic behöver tillgång till kameran för att kunna fota och dokumentera arbetet direkt i Projektet."
         }
       ],
       [
-        "@sentry/react-native/expo",
+        "expo-speech-recognition",
         {
-          "url": "https://sentry.io/",
-          "project": "react-native",
-          "organization": "workaholic"
+          "microphonePermission": "Tillåt Workaholic att använda mikrofonen för röstinmatning i AI-arbetsordern.",
+          "speechRecognitionPermission": "Tillåt Workaholic att använda taligenkänning för röstinmatning."
         }
       ],
-      "@sentry/react-native",
       [
         "expo-build-properties",
         {
@@ -72,6 +71,7 @@
       ]
     ],
     "extra": {
+      "webUrl": "https://workaholic-web.vercel.app",
       "eas": {
         "projectId": "84ce2dfb-06fd-4fe5-8703-cda97f21d310"
       }

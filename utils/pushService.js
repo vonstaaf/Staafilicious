@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/react-native";
+import logger from "./logger";
 
 /**
  * SKICKA PUSH-NOTIS TILL EN SPECIFIK TOKEN
@@ -35,16 +35,14 @@ export async function sendPushNotification(expoPushToken, title, body, data = {}
         responseData?.errors?.[0]?.message ||
         responseData?.message ||
         `HTTP ${response.status}`;
-      if (__DEV__) console.warn("[pushService] Push misslyckades:", errMsg);
-      Sentry.captureMessage(`Push failed: ${errMsg}`, "warning");
+      logger.warn("Push misslyckades:", errMsg);
       return { ok: false, error: errMsg };
     }
 
     return { ok: true };
   } catch (err) {
     const message = err?.message || String(err);
-    if (__DEV__) console.warn("[pushService] Nätverksfel:", message);
-    Sentry.captureException(err);
+    logger.error("Push nätverksfel", err);
     return { ok: false, error: message };
   }
 }

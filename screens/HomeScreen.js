@@ -1,25 +1,27 @@
 import React, { useContext, useState } from "react";
 import {
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet, 
-  Keyboard, 
-  StatusBar, 
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Keyboard,
+  StatusBar,
   ScrollView,
-  Alert
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProjectsContext } from "../context/ProjectsContext";
 import { formatProjectName } from "../utils/stringHelpers";
 import { auth } from "../firebaseConfig";
 import { signOut } from "firebase/auth";
-import { WorkaholicTheme } from "../theme";
+import { useTheme } from "../context/ThemeContext";
+import AppHeader from "../components/AppHeader";
 
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const { createProject, importProject, selectedProject } = useContext(ProjectsContext);
   
   const [projectName, setProjectName] = useState("");
@@ -56,16 +58,19 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-      
-      {/* HEADER */}
-      <View style={[styles.header, { paddingTop: insets.top - 15 }]}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <AppHeader showBackButton={false} hideTitle={true} useBrandLogo />
+      <View style={styles.pageHeader}>
         <View>
-          <Text style={styles.brandText}>WORKAHOLIC <Text style={{color: WorkaholicTheme.colors.primary}}>PRO</Text></Text>
-          <Text style={styles.dateText}>{new Date().toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}</Text>
+          <Text style={styles.brandText}>
+            WORKAHOLIC <Text style={{ color: theme.colors.primary }}>PRO</Text>
+          </Text>
+          <Text style={styles.dateText}>
+            {new Date().toLocaleDateString("sv-SE", { weekday: "long", day: "numeric", month: "long" }).toUpperCase()}
+          </Text>
         </View>
         <TouchableOpacity style={styles.logoutBtn} onPress={() => signOut(auth)}>
-          <Ionicons name="log-out-outline" size={20} color={WorkaholicTheme.colors.error} />
+          <Ionicons name="log-out-outline" size={20} color={theme.colors.error} />
         </TouchableOpacity>
       </View>
 
@@ -97,7 +102,7 @@ export default function HomeScreen({ navigation }) {
                 style={styles.shortcutBtn} 
                 onPress={() => navigation.navigate("InspectionScreen", { project: selectedProject })}
               >
-                <Ionicons name="shield-checkmark" size={20} color={WorkaholicTheme.colors.primary} />
+                <Ionicons name="shield-checkmark" size={20} color={theme.colors.primary} />
                 <Text style={styles.shortcutText}>Egenkontroll</Text>
               </TouchableOpacity>
 
@@ -105,7 +110,7 @@ export default function HomeScreen({ navigation }) {
                 style={styles.shortcutBtn} 
                 onPress={() => navigation.navigate("GroupSchedule", { project: selectedProject })}
               >
-                <Ionicons name="list" size={20} color={WorkaholicTheme.colors.primary} />
+                <Ionicons name="list" size={20} color={theme.colors.primary} />
                 <Text style={styles.shortcutText}>Gruppschema</Text>
               </TouchableOpacity>
             </View>
@@ -113,7 +118,7 @@ export default function HomeScreen({ navigation }) {
         ) : (
           <View style={styles.welcomeArea}>
             <View style={styles.iconCircle}>
-              <Ionicons name="flash" size={40} color={WorkaholicTheme.colors.primary} />
+              <Ionicons name="flash" size={40} color={theme.colors.primary} />
             </View>
             <Text style={styles.welcomeTitle}>Välkommen</Text>
             <Text style={styles.welcomeSub}>Välj ett projekt i listan eller skapa ett nytt nedan för att komma igång.</Text>
@@ -131,7 +136,7 @@ export default function HomeScreen({ navigation }) {
               style={styles.input} 
               placeholderTextColor="#BBB"
             />
-            <TouchableOpacity style={styles.addBtn} onPress={handleCreate}>
+            <TouchableOpacity style={[styles.addBtn, { backgroundColor: theme.colors.primary }]} onPress={handleCreate}>
               <Ionicons name="add" size={30} color="#FFF" />
             </TouchableOpacity>
           </View>
@@ -161,8 +166,17 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FB' },
-  header: { paddingHorizontal: 25, paddingBottom: 20, backgroundColor: "#FFF", flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  container: { flex: 1, backgroundColor: "#F8F9FB" },
+  pageHeader: {
+    paddingHorizontal: 25,
+    paddingVertical: 16,
+    backgroundColor: "#FFF",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F0F0",
+  },
   brandText: { fontSize: 20, fontWeight: "900", color: "#1C1C1E", letterSpacing: -0.5 },
   dateText: { fontSize: 9, fontWeight: "800", color: "#BBB", marginTop: 2, letterSpacing: 0.5 },
   logoutBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#FFF5F5', justifyContent: 'center', alignItems: 'center' },
@@ -190,7 +204,7 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 10, fontWeight: "900", color: "#CCC", letterSpacing: 1.2, marginBottom: 15 },
   inputRow: { flexDirection: 'row', gap: 10 },
   input: { flex: 1, backgroundColor: "#F5F5F7", padding: 16, borderRadius: 15, fontSize: 14, fontWeight: '700', color: '#1C1C1E' },
-  addBtn: { backgroundColor: WorkaholicTheme.colors.primary, width: 55, borderRadius: 15, justifyContent: "center", alignItems: "center", elevation: 2 },
+  addBtn: { width: 55, borderRadius: 15, justifyContent: "center", alignItems: "center", elevation: 2 },
   divider: { height: 1, backgroundColor: '#F8F9FB', marginVertical: 25 },
   infoFooter: { textAlign: 'center', fontSize: 10, color: '#DDD', fontWeight: '800', marginTop: 30, letterSpacing: 1 }
 });

@@ -1,4 +1,4 @@
-import React, { useContext, useMemo } from "react";
+import React, { useContext, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,10 +11,12 @@ import {
   Image,
   ActivityIndicator,
   StatusBar,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { ProjectsContext } from "../context/ProjectsContext";
+import { CompanyContext } from "../context/CompanyContext";
 import { WorkaholicTheme } from "../theme";
 import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../components/AppHeader";
@@ -24,6 +26,7 @@ import TemplatePickerModal from "../components/inspection/TemplatePickerModal";
 import NameEntryModal from "../components/inspection/NameEntryModal";
 import SignModal from "../components/inspection/SignModal";
 import InspectionSectionList from "../components/inspection/InspectionSectionList";
+import { validateMeasurement, saveMeasurement } from "../utils/measurementValidation";
 
 const getUnitSymbol = (unit) => {
   switch (unit) {
@@ -37,9 +40,16 @@ const getUnitSymbol = (unit) => {
 };
 
 const InspectionStoryItem = React.memo(
-  ({ item, checks, setStatus, rowComments, setRowComments, images, takePhoto, persistData }) => {
+  ({ item, checks, setStatus, rowComments, setRowComments, images, takePhoto, persistData, onMeasurementBlur }) => {
+    const latestValueRef = React.useRef("");
     const handleCommentChange = (t) => {
+      latestValueRef.current = t;
       setRowComments((prev) => ({ ...prev, [item.id]: t }));
+    };
+    const handleBlur = () => {
+      persistData({ inspectionRowComments: rowComments });
+      const valueStr = (latestValueRef.current || rowComments[item.id] || "").trim();
+      if (item.unit && valueStr && onMeasurementBlur) onMeasurementBlur(item, valueStr);
     };
     const unitSymbol = getUnitSymbol(item.unit);
 
@@ -90,7 +100,7 @@ const InspectionStoryItem = React.memo(
               multiline
               value={rowComments[item.id] || ""}
               onChangeText={handleCommentChange}
-              onBlur={() => persistData({ inspectionRowComments: rowComments })}
+              onBlur={handleBlur}
               placeholderTextColor="#BBB"
             />
             {item.unit ? (
@@ -180,6 +190,27 @@ export default function InspectionScreen({ route, navigation }) {
     handlePrev,
   } = form;
 
+  const { companyId } = useContext(CompanyContext);
+
+  const onMeasurementBlur = useCallback(
+    async (item, valueStr) => {
+      const result = validateMeasurement(valueStr, item);
+      if (!result.valid) {
+        Alert.alert("Gränsvärde enligt byggregler", result.message);
+        return;
+      }
+      const num = parseFloat(String(valueStr).replace(",", ".").trim());
+      if (!Number.isNaN(num) && companyId && project?.id) {
+        try {
+          await saveMeasurement(companyId, project.id, item, num);
+        } catch (e) {
+          console.warn("Kunde inte spara mätvärde:", e);
+        }
+      }
+    },
+    [companyId, project?.id]
+  );
+
   if (!project) return null;
 
   return (
@@ -225,6 +256,7 @@ export default function InspectionScreen({ route, navigation }) {
             images={images}
             takePhoto={takePhoto}
             persistData={persistData}
+            onMeasurementBlur={onMeasurementBlur}
           />
         ) : (
           <InspectionSectionList

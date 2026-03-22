@@ -2,11 +2,17 @@ import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, StatusBar } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTheme } from "../context/ThemeContext";
 import { WorkaholicTheme } from "../theme";
 import AppHeader from "../components/AppHeader";
 import { auth, db } from "../firebaseConfig";
 import { formatProjectName } from "../utils/stringHelpers";
+import { getProfessionKeys } from "../constants/wholesalers";
+import { BYGG_EGENKONTROLL_ITEMS } from "../constants/byggChecklist";
 import { doc, onSnapshot } from "firebase/firestore";
+import { CompanyContext } from "../context/CompanyContext";
+import { ProjectsContext } from "../context/ProjectsContext";
+import { generateAndShareSakerVattenIntyg } from "../utils/pdfActions";
 
 // --- SKARPA MALLAR BASERADE PÅ DIN UPPLADDADE DOKUMENTATION (EIO/IN) ---
 // Uppdaterade med 'unit' för att automatiskt trigga mätvärdesfälten i InspectionScreen
@@ -46,9 +52,13 @@ const TNS_TEMPLATE = [
 
 export default function ProtocolsHubScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const { project } = route.params || {}; 
-  const [profession, setProfession] = useState(""); 
+  const theme = useTheme();
+  const { project } = route.params || {};
+  const { companyId } = React.useContext(CompanyContext);
+  const { companyData } = React.useContext(ProjectsContext);
+  const [profession, setProfession] = useState("");
   const [loading, setLoading] = useState(true);
+  const [generatingIntyg, setGeneratingIntyg] = useState(false);
 
   // 1. LYSSNA LIVE PÅ DATABASEN
   useEffect(() => {
@@ -66,11 +76,12 @@ export default function ProtocolsHubScreen({ route, navigation }) {
     return () => unsubscribe();
   }, []);
 
-  // 2. LOGIK FÖR ATT VISA RÄTT KNAPPAR
+  // 2. LOGIK FÖR ATT VISA RÄTT KNAPPAR (stöd för flera yrken: "El, VVS" osv.)
+  const professionKeys = getProfessionKeys(profession);
+  const isEl = professionKeys.includes("el");
+  const isBygg = professionKeys.includes("bygg");
+  const isRormokare = professionKeys.includes("vvs");
   const current = profession ? profession.toLowerCase() : "";
-  const isEl = current.includes("el"); 
-  const isBygg = current.includes("Bygg") || current.includes("bygg");
-  const isRormokare = current.includes("rör") || current.includes("vvs");
 
   // Funktion för att starta ett protokoll med en specifik mall
   const startProtocol = (title, templateItems) => {
@@ -84,7 +95,7 @@ export default function ProtocolsHubScreen({ route, navigation }) {
 
   const ProtocolCard = ({ title, sub, icon, color, onPress, disabled }) => (
     <TouchableOpacity 
-      style={[styles.card, { backgroundColor: WorkaholicTheme.colors.surface, opacity: disabled ? 0.6 : 1 }]} 
+      style={[styles.card, { backgroundColor: theme.colors.surface, opacity: disabled ? 0.6 : 1 }]} 
       onPress={disabled ? () => Alert.alert("Info", "Denna funktion är inte tillgänglig än.") : onPress}
       activeOpacity={0.7}
     >
@@ -95,11 +106,11 @@ export default function ProtocolsHubScreen({ route, navigation }) {
         <Text style={styles.cardTitle}>{title}</Text>
         <Text style={styles.cardSub}>{sub}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={20} color={WorkaholicTheme.colors.textSecondary} />
+      <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
     </TouchableOpacity>
   );
 
-  if (loading) return <View style={styles.center}><ActivityIndicator color={WorkaholicTheme.colors.primary} /></View>;
+  if (loading) return <View style={styles.center}><ActivityIndicator color={theme.colors.primary} /></View>;
 
   // Formatera projektnamnet med stor begynnelsebokstav ifall det saknas
   const projectName = formatProjectName(project?.name, "Välj protokoll");
@@ -116,20 +127,22 @@ export default function ProtocolsHubScreen({ route, navigation }) {
       
       <ScrollView 
         contentContainerStyle={{ 
-          padding: WorkaholicTheme.spacing.medium,
+          padding: theme.spacing.medium,
           paddingBottom: insets.bottom + 20 
         }}
       >
         <Text style={styles.sectionLabel}>TILLGÄNGLIGA KONTROLLER</Text>
         
-        {/* --- ALLA SER DETTA --- */}
-        <ProtocolCard 
-          title="EGENKONTROLL" 
-          sub="Din standardmall & foton" 
-          icon="checkmark-done-circle" 
-          color={WorkaholicTheme.colors.success} 
-          onPress={() => navigation.navigate("InspectionScreen", { project })} 
-        />
+        {/* --- EL: Allmän / Golvvärme egenkontroll --- */}
+        {isEl && (
+          <ProtocolCard 
+            title="EGENKONTROLL" 
+            sub="Allmän eller Golvvärme-mall & foton" 
+            icon="checkmark-done-circle" 
+            color={theme.colors.success} 
+            onPress={() => navigation.navigate("InspectionScreen", { project })} 
+          />
+        )}
 
         {/* --- KONTROLL FÖR El --- */}
         {isEl && (
@@ -138,7 +151,7 @@ export default function ProtocolsHubScreen({ route, navigation }) {
               title="GRUPPSCHEMA" 
               sub="Skapa förteckning" 
               icon="grid" 
-              color={WorkaholicTheme.colors.primary} 
+              color={theme.colors.primary} 
               onPress={() => navigation.navigate("GroupSchedule", { project })} 
             />
             
@@ -170,14 +183,86 @@ export default function ProtocolsHubScreen({ route, navigation }) {
           </>
         )}
 
-        {/* --- KONTROLL FÖR Bygg --- */}
+        {/* --- KONTROLL FÖR Bygg (Snickeri & Stomme, AMA/BKR/GVK) --- */}
         {isBygg && (
-          <ProtocolCard title="KVALITETSDOKUMENT" sub="Specifikt för Bygg" icon="hammer" color="#FF5722" disabled={true} />
+          <ProtocolCard
+            title="KVALITETSDOKUMENT BYGG"
+            sub="Stomme, klimatskärm, våtrum, brand/ljud, slutfinish – AMA/BKR/GVK"
+            icon="hammer"
+            color="#FF5722"
+            onPress={() => startProtocol("KVALITETSDOKUMENT BYGG", BYGG_EGENKONTROLL_ITEMS)}
+          />
         )}
 
-        {/* --- KONTROLL FÖR Rör --- */}
+        {/* --- VVS / Rör (visas endast för användare med VVS/rör som yrke) --- */}
         {isRormokare && (
-          <ProtocolCard title="SÄKER VATTEN" sub="Specifikt för VVS" icon="water" color="#03A9F4" disabled={true} />
+          <>
+            <ProtocolCard
+              title="SMART EGENKONTROLL"
+              sub="VVS-checklista med fotostöd & geotagging"
+              icon="checkmark-done-circle"
+              color="#03A9F4"
+              onPress={() => navigation.navigate("SmartEgenkontroll", { project })}
+            />
+            <ProtocolCard
+              title="TRYCKPROVNING"
+              sub="Tryck- och täthetsprov, signatur"
+              icon="water"
+              color="#03A9F4"
+              onPress={() => navigation.navigate("PressureTest", { project })}
+            />
+
+            <ProtocolCard
+              title="SKANNA PRODUKT (EAN)"
+              sub="Streckkoder på blandare, värmepumpar – bygg DU-instruktion"
+              icon="barcode"
+              color="#607D8B"
+              onPress={() => navigation.navigate("BarcodeScan", { project })}
+            />
+            <ProtocolCard
+              title="RELATIONSRITNING"
+              sub="Ladda upp planritning och rita in var rören hamnade"
+              icon="git-branch"
+              color="#795548"
+              onPress={() => navigation.navigate("Relationsritning", { project })}
+            />
+            <ProtocolCard
+              title="SÄKER VATTEN-INTYG"
+              sub={generatingIntyg ? "Skapar PDF..." : "PDF-intyg från egenkontroll & tryckprov"}
+              icon="document-text"
+              color="#0277BD"
+              onPress={async () => {
+                if (generatingIntyg) return;
+                if (!companyId || !project?.id) {
+                  Alert.alert("Fel", "Projekt eller företag saknas.");
+                  return;
+                }
+                setGeneratingIntyg(true);
+                try {
+                  await generateAndShareSakerVattenIntyg(companyId, project.id, project, companyData);
+                } catch (e) {
+                  Alert.alert(
+                    "Kunde inte skapa intyg",
+                    e?.message || "Kontrollera att du gjort en Smart egenkontroll för detta projekt."
+                  );
+                } finally {
+                  setGeneratingIntyg(false);
+                }
+              }}
+              disabled={generatingIntyg}
+            />
+          </>
+        )}
+
+        {/* Avvikelse (Varningen) – för El, Bygg och VVS */}
+        {(isEl || isBygg || isRormokare) && (
+          <ProtocolCard
+            title="AVVIKELSE (VARNINGEN)"
+            sub="Dokumentera när annan yrkesgrupp hindrar branschreglerna – juridiskt skydd"
+            icon="warning"
+            color="#FF9800"
+            onPress={() => navigation.navigate("Varning", { project })}
+          />
         )}
 
         <View style={styles.divider} />
@@ -186,7 +271,7 @@ export default function ProtocolsHubScreen({ route, navigation }) {
           title="ARKIV" 
           sub="Tidigare historik" 
           icon="archive" 
-          color={WorkaholicTheme.colors.textSecondary} 
+          color={theme.colors.textSecondary} 
           onPress={() => navigation.navigate("InspectionHistory", { project })} 
         />
         

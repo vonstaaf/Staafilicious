@@ -18,10 +18,13 @@ import {
   Image
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../firebaseConfig";
 import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
 import { capitalizeFirst } from "../utils/stringHelpers";
 import { searchProducts } from "../utils/productSearch";
+import { getWholesalersForProfession } from "../constants/wholesalers";
 import AppHeader from "../components/AppHeader";
 import { WorkaholicTheme } from "../theme";
 
@@ -39,12 +42,6 @@ const decimalOnly = (text) => {
   return cleaned;
 };
 
-const WHOLESALERS = [
-  { id: 'rexel', name: 'Rexel', icon: 'flash-outline' },
-  { id: 'ahlsell', name: 'Ahlsell', icon: 'construct-outline' },
-  { id: 'solar', name: 'Solar', icon: 'sunny-outline' },
-  { id: 'elektroskandia', name: 'E-skandia', icon: 'bulb-outline' }
-];
 
 /**
  * 🖼 SAFE IMAGE KOMPONENT
@@ -205,11 +202,37 @@ export default function ProductsScreen({ navigation, route }) {
   const [isSearching, setIsSearching] = useState(false);
   const [zoomImage, setZoomImage] = useState(null); 
   
-  const [selectedWholesaler, setSelectedWholesaler] = useState('rexel');
+  const [profession, setProfession] = useState("");
+  const visibleWholesalers = useMemo(() => getWholesalersForProfession(profession), [profession]);
+  const firstWholesalerId = visibleWholesalers[0]?.id;
+  const [selectedWholesaler, setSelectedWholesaler] = useState("rexel");
+
+  useEffect(() => {
+    const load = async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists() && snap.data().profession != null) {
+          setProfession(snap.data().profession);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    load();
+  }, []);
+
+  useEffect(() => {
+    if (firstWholesalerId && !visibleWholesalers.some((ws) => ws.id === selectedWholesaler)) {
+      setSelectedWholesaler(firstWholesalerId);
+    }
+  }, [firstWholesalerId, visibleWholesalers, selectedWholesaler]);
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalSearchQuery, setModalSearchQuery] = useState("");
   const [modalResults, setModalResults] = useState([]);
+  /** Valda artiklar med antal: [{ item, quantity }, ...] */
   const [selectedInModal, setSelectedInModal] = useState([]);
 
   const currentProducts = useMemo(() => project?.products || [], [project]);
@@ -242,29 +265,59 @@ export default function ProductsScreen({ navigation, route }) {
 
   const addModalItemsToProject = async () => {
     if (selectedInModal.length === 0) return;
-    
-    const newItems = selectedInModal.map(item => {
+
+    const newItems = selectedInModal.map(({ item, quantity }) => {
       const price = parseFloat(item.price || item.purchasePrice || 0);
+      const q = Math.max(0.001, parseFloat(quantity) || 1);
       const markup = 25;
       return {
         name: item.label || item.name || "Okänd",
         articleNumber: item.artNr || item.articleNumber || "-",
         purchasePrice: price,
         markup: markup,
-        quantity: 1,
+        quantity: q,
         unitPriceOutExclVat: price * (1 + markup / 100),
         imageUrl: item.imageUrl || null,
-        brand: item.brand || null 
+        brand: item.brand || null,
       };
     });
 
     const updated = [...newItems, ...currentProducts];
-    
+
     await updateProject(project.id, { products: updated });
     setIsModalVisible(false);
     setSelectedInModal([]);
     setModalResults([]);
     setModalSearchQuery("");
+  };
+
+  const getSelectedQuantity = (item) => {
+    const art = item.artNr || item.articleNumber || item.id;
+    const entry = selectedInModal.find((x) => (x.item.artNr || x.item.articleNumber || x.item.id) === art);
+    return entry ? entry.quantity : 0;
+  };
+
+  const setSelectedQuantity = (item, quantity) => {
+    const art = item.artNr || item.articleNumber || item.id;
+    const parsed = parseFloat(quantity);
+    const q = isNaN(parsed) || parsed < 0 ? 1 : Math.max(0.001, parsed);
+    setSelectedInModal((prev) => {
+      const existing = prev.findIndex((x) => (x.item.artNr || x.item.articleNumber || x.item.id) === art);
+      if (existing === -1) return prev;
+      const next = [...prev];
+      next[existing] = { ...next[existing], quantity: q };
+      return next;
+    });
+  };
+
+  const toggleModalSelection = (item) => {
+    const art = item.artNr || item.articleNumber || item.id;
+    const isSelected = selectedInModal.some((x) => (x.item.artNr || x.item.articleNumber || x.item.id) === art);
+    if (isSelected) {
+      setSelectedInModal((prev) => prev.filter((x) => (x.item.artNr || x.item.articleNumber || x.item.id) !== art));
+    } else {
+      setSelectedInModal((prev) => [...prev, { item, quantity: 1 }]);
+    }
   };
 
   const saveProduct = async () => {
@@ -438,7 +491,7 @@ export default function ProductsScreen({ navigation, route }) {
 
             <View style={styles.wholesalerContainer}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.wholesalerScroll}>
-                {WHOLESALERS.map(ws => (
+                {(visibleWholesalers.length === 0 ? [{ id: "rexel", name: "Rexel", icon: "flash-outline" }] : visibleWholesalers).map(ws => (
                   <TouchableOpacity 
                     key={ws.id} 
                     onPress={() => setSelectedWholesaler(ws.id)}
@@ -471,52 +524,73 @@ export default function ProductsScreen({ navigation, route }) {
               keyExtractor={(item, index) => item.id || item.articleNumber || String(index)}
               renderItem={({ item }) => {
                 const itemArt = item.artNr || item.articleNumber || item.id;
-                const isSelected = selectedInModal.find(x => (x.artNr || x.articleNumber || x.id) === itemArt);
+                const isSelected = selectedInModal.some((x) => (x.item.artNr || x.item.articleNumber || x.item.id) === itemArt);
+                const qty = getSelectedQuantity(item);
                 const hasDiscount = item.discountPercent && parseFloat(item.discountPercent) > 0;
 
                 return (
-                  <TouchableOpacity 
-                    style={[styles.resultCard, isSelected && styles.resultCardSelected]} 
-                    onPress={() => {
-                      if (isSelected) setSelectedInModal(selectedInModal.filter(x => (x.artNr || x.articleNumber || x.id) !== itemArt));
-                      else setSelectedInModal([...selectedInModal, item]);
-                    }}
+                  <TouchableOpacity
+                    style={[styles.resultCard, isSelected && styles.resultCardSelected]}
+                    onPress={() => toggleModalSelection(item)}
+                    activeOpacity={0.8}
                   >
-                    
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       disabled={!item.imageUrl}
                       onPress={() => setZoomImage(item.imageUrl)}
                     >
-                      <SafeImage 
-                        uri={item.imageUrl} 
-                        style={styles.resultImage} 
+                      <SafeImage
+                        uri={item.imageUrl}
+                        style={styles.resultImage}
                         placeholderStyle={{ width: 55, height: 55 }}
                         iconSize={20}
                       />
                     </TouchableOpacity>
 
-                    <View style={{flex: 1}}>
+                    <View style={{ flex: 1 }}>
                       {item.brand && <Text style={styles.resultBrand}>{item.brand}</Text>}
                       <Text style={styles.resultName}>{item.label || item.name}</Text>
                       <View style={styles.resultMetaRow}>
                         <Text style={styles.resultArt}>Art.nr: {itemArt}</Text>
                         {hasDiscount && (
-                           <View style={styles.discountBadge}>
-                              <Text style={styles.discountBadgeText}>-{item.discountPercent}%</Text>
-                           </View>
+                          <View style={styles.discountBadge}>
+                            <Text style={styles.discountBadgeText}>-{item.discountPercent}%</Text>
+                          </View>
                         )}
                       </View>
+                      {isSelected && (
+                        <View style={styles.quantityRow}>
+                          <Text style={styles.quantityLabel}>Antal:</Text>
+                          <TouchableOpacity
+                            style={styles.qtyBtn}
+                            onPress={() => setSelectedQuantity(item, (parseFloat(qty) || 1) - 1)}
+                          >
+                            <Ionicons name="remove" size={16} color={WorkaholicTheme.colors.primary} />
+                          </TouchableOpacity>
+                          <TextInput
+                            style={styles.qtyInput}
+                            value={String(qty)}
+                            keyboardType="decimal-pad"
+                            onChangeText={(v) => setSelectedQuantity(item, v)}
+                          />
+                          <TouchableOpacity
+                            style={styles.qtyBtn}
+                            onPress={() => setSelectedQuantity(item, (parseFloat(qty) || 0) + 1)}
+                          >
+                            <Ionicons name="add" size={16} color={WorkaholicTheme.colors.primary} />
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
-                    
+
                     <View style={styles.resultPriceBox}>
-                        <Text style={styles.resultPrice}>{formatNumber(item.price)}:-</Text>
-                        <Text style={styles.resultVatInfo}>exkl. moms</Text>
+                      <Text style={styles.resultPrice}>{formatNumber(item.price)}:-</Text>
+                      <Text style={styles.resultVatInfo}>exkl. moms</Text>
                     </View>
-                    
-                    <Ionicons 
-                      name={isSelected ? "checkmark-circle" : "add-circle-outline"} 
-                      size={26} 
-                      color={isSelected ? "#34C759" : "#DDD"} 
+
+                    <Ionicons
+                      name={isSelected ? "checkmark-circle" : "add-circle-outline"}
+                      size={26}
+                      color={isSelected ? "#34C759" : "#DDD"}
                     />
                   </TouchableOpacity>
                 );
@@ -524,13 +598,15 @@ export default function ProductsScreen({ navigation, route }) {
             />
 
             <View style={[styles.modalFooter, { paddingBottom: insets.bottom + 15 }]}>
-              <TouchableOpacity 
-                style={[styles.addSelectedBtn, selectedInModal.length === 0 && { backgroundColor: '#EEE' }]}
-                onPress={addModalItemsToProject} 
+              <TouchableOpacity
+                style={[styles.addSelectedBtn, selectedInModal.length === 0 && { backgroundColor: "#EEE" }]}
+                onPress={addModalItemsToProject}
                 disabled={selectedInModal.length === 0}
               >
-                <Text style={[styles.addSelectedText, selectedInModal.length === 0 && { color: '#AAA' }]}>
-                    LÄGG TILL {selectedInModal.length} ARTIKLAR
+                <Text style={[styles.addSelectedText, selectedInModal.length === 0 && { color: "#AAA" }]}>
+                  LÄGG TILL {selectedInModal.length} RAD{selectedInModal.length !== 1 ? "ER" : ""}
+                  {selectedInModal.length > 0 &&
+                    ` (${selectedInModal.reduce((sum, { quantity }) => sum + (parseFloat(quantity) || 0), 0)} st)`}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -604,6 +680,10 @@ const styles = StyleSheet.create({
   resultArt: { fontSize: 11, color: '#999', fontWeight: '600' },
   discountBadge: { backgroundColor: '#E8F5E9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   discountBadgeText: { fontSize: 9, fontWeight: '900', color: '#2E7D32' },
+  quantityRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 },
+  quantityLabel: { fontSize: 11, fontWeight: '700', color: '#8E8E93' },
+  qtyBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F0F0F2', justifyContent: 'center', alignItems: 'center' },
+  qtyInput: { width: 48, backgroundColor: '#F5F5F7', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 8, fontSize: 13, fontWeight: '800', color: '#1C1C1E', textAlign: 'center' },
   resultPriceBox: { alignItems: 'flex-end', marginRight: 15 },
   resultPrice: { fontSize: 15, fontWeight: '900', color: '#1C1C1E' },
   resultVatInfo: { fontSize: 8, color: '#CCC', fontWeight: '700', marginTop: 1 },

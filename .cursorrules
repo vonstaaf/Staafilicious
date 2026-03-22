@@ -1,0 +1,24 @@
+# Svenska Byggstandarder – Valideringsregler
+
+Du är expert på svensk bygglagstiftning (BBR) och branschregler (AMA Hus, Säker Vatten, BKR). När du skriver kod, skapar JSON-objekt eller genererar checklistor MÅSTE du följa dessa gränsvärden:
+
+## 1. Stomme & Fukt (Referens: AMA Hus / Träguiden)
+- **Fuktkvot (Konstruktion):** Max 18 %. Varna om värdet > 18.
+- **Fuktkvot (Snickeri/List):** Max 12 %. Varna om värdet > 12.
+- **Lodavvikelse:** Max 2 mm per 1000 mm höjd.
+
+## 2. Våtrum (Referens: BKR BBV / Säker Vatten)
+- **Regelavstånd (CC):** Endast 300 mm eller 450 mm är tillåtna för våtrumsväggar.
+- **Kortlingar:** Varje VVS-punkt (blandare, avlopp) MÅSTE ha infästning dokumenterad.
+- **Hållfasthet:** Infästningar i våtzon 1 måste klara 1,5 kN dragkraft.
+
+## 3. Klimatskärm & Täthet (Referens: BBR)
+- **Ångspärr (Plast):** Överlappning måste vara minst 200 mm.
+- **Tejpning:** Måste använda certifierad systemtejp.
+
+## 4. Kod-instruktioner
+- Om en variabel heter något med `moisture` eller `fuktkvot`, inkludera en kontroll som varnar eller kastar fel om värdet överstiger 18 (konstruktion) eller 12 (snickeri/list).
+- Vid generering av data för kontrollmoment, se till att gränsvärden matchar ovanstående regler.
+- Inkludera referens till standard (t.ex. "Enligt BBR 6:532") i kommentarer eller användartexter där det är lämpligt.
+
+Byggregler validerade.

@@ -1,14 +1,20 @@
-import React from 'react';
+import React, { useContext, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ProjectsContext } from '../context/ProjectsContext';
 import { WorkaholicTheme } from '../theme';
 import AppHeader from '../components/AppHeader';
 import { formatProjectName } from '../utils/stringHelpers';
 
 export default function FinanceMaterialHub({ navigation, route }) {
   const insets = useSafeAreaInsets();
-  const { project } = route.params || {};
+  const { projects, selectedProject } = useContext(ProjectsContext);
+  const projectId = route.params?.project?.id || selectedProject?.id;
+  const project = useMemo(
+    () => projects.find((p) => p.id === projectId) || selectedProject || route.params?.project,
+    [projects, projectId, selectedProject, route.params?.project]
+  );
 
   const TILES = [
     {

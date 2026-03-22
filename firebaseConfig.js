@@ -10,6 +10,7 @@ import {
   getFirestore 
 } from "firebase/firestore"; 
 import { getDatabase } from "firebase/database"; // 🔑 Ny import för Realtime Database
+import { getFunctions } from "firebase/functions";
 import { getStorage } from "firebase/storage";
 import { getAnalytics, logEvent, isSupported } from "firebase/analytics";
 import { Platform } from "react-native";
@@ -44,10 +45,13 @@ if (Platform.OS === 'web') {
 // Genom att initiera den här med 'app' tvingas den använda databaseURL från configen ovan.
 export const rtdb = getDatabase(app);
 
-// 4. Initiera Storage
+// 4. Initiera Functions (för t.ex. claimLicense)
+export const functions = getFunctions(app, "europe-west1");
+
+// 5. Initiera Storage
 export const storage = getStorage(app);
 
-// 5. Initiera Auth med AsyncStorage persistence
+// 6. Initiera Auth med AsyncStorage persistence
 let auth;
 if (Platform.OS === "web") {
   auth = getAuth(app);

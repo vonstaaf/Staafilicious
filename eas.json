@@ -13,13 +13,17 @@
     "simulator": {
       "distribution": "store",
       "ios": {
-        "simulator": true
+        "simulator": true,
+        "image": "latest"
       }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "ios": {
+        "image": "latest"
       },
       "env": {
         "NODE_ENV": "production",
@@ -31,6 +35,9 @@
       "distribution": "store",
       "android": {
         "buildType": "app-bundle"
+      },
+      "ios": {
+        "image": "latest"
       },
       "env": {
         "NODE_ENV": "production",

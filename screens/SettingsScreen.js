@@ -17,21 +17,8 @@ import * as FileSystem from 'expo-file-system';
 import Constants from 'expo-constants';
 import { useBadges } from "../context/BadgeContext";
 import { uploadLogoToCloud } from "../utils/settingsService";
-
-const WHOLESALERS = [
-  { id: 'rexel', name: 'Rexel', icon: 'flash' },
-  { id: 'solar', name: 'Solar', icon: 'sunny' },
-  { id: 'ahlsell', name: 'Ahlsell', icon: 'construct' },
-  { id: 'elektroskandia', name: 'E-skandia', icon: 'bulb' }
-];
-
-const DISCOUNT_GROUPS = [
-  { id: 'kabel', label: 'Kabel & Ledning' },
-  { id: 'installation', label: 'Installationsmaterial' },
-  { id: 'belysning', label: 'Belysning' },
-  { id: 'central', label: 'Central & Norm' },
-  { id: 'ovrigt', label: 'Övrigt / Standard' }
-];
+import { getWholesalersForProfession, getDiscountGroupsForProfession, getProfessionKeys } from "../constants/wholesalers";
+import JSZip from 'jszip';
 
 export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -44,11 +31,7 @@ export default function SettingsScreen({ navigation }) {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [activeWholesaler, setActiveWholesaler] = useState(null);
   const [tempDiscounts, setTempDiscounts] = useState({});
-
-  const appVersion = Constants.expoConfig?.version || "1.0.0";
-  const buildVersion = Platform.OS === 'ios' 
-    ? Constants.expoConfig?.ios?.buildNumber || "1"
-    : Constants.expoConfig?.android?.versionCode || "1";
+  const [profession, setProfession] = useState("");
 
   useEffect(() => {
     loadUserData();
@@ -59,7 +42,10 @@ export default function SettingsScreen({ navigation }) {
     try {
       const user = auth.currentUser;
       if (user) {
-        const discountDoc = await getDoc(doc(db, "userDiscounts", user.uid));
+        const [discountDoc, userDoc] = await Promise.all([
+          getDoc(doc(db, "userDiscounts", user.uid)),
+          getDoc(doc(db, "users", user.uid)),
+        ]);
         if (discountDoc.exists()) {
           const rawData = discountDoc.data().data;
           if (typeof rawData === 'string') {
@@ -68,6 +54,9 @@ export default function SettingsScreen({ navigation }) {
             setDiscountAgreements(discountDoc.data().agreements || {});
           }
         }
+        if (userDoc.exists() && userDoc.data().profession != null) {
+          setProfession(userDoc.data().profession);
+        }
       }
     } catch (e) { 
       console.error("Laddningsfel:", e); 
@@ -75,6 +64,15 @@ export default function SettingsScreen({ navigation }) {
       setLoading(false); 
     }
   };
+
+  const professionKeys = getProfessionKeys(profession);
+  const isEl = professionKeys.includes("el");
+  const isVvs = professionKeys.includes("vvs");
+  const isBygg = professionKeys.includes("bygg");
+  const hasEgenkontrollMall = isEl || isVvs || isBygg;
+
+  const visibleWholesalers = getWholesalersForProfession(profession);
+  const discountGroups = getDiscountGroupsForProfession(profession);
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -97,59 +95,115 @@ export default function SettingsScreen({ navigation }) {
 
   const handleImportFile = async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({ type: 'text/plain' });
+      const result = await DocumentPicker.getDocumentAsync({ 
+        type: ['text/plain', 'application/zip', 'application/x-zip-compressed', '*/*'] 
+      });
       if (result.canceled) return;
 
       setImporting(true);
       const fileUri = result.assets[0].uri;
-      const fileContent = await FileSystem.readAsStringAsync(fileUri, { 
-        encoding: FileSystem.EncodingType.UTF8 
-      });
+      const fileName = result.assets[0].name ? result.assets[0].name.toLowerCase() : '';
       
-      const lines = fileContent.split('\n');
-      const totalLines = lines.length;
       const importedData = {};
       let count = 0;
       let skipped = 0;
-      const batchSize = 3000; 
 
-      for (let i = 0; i < totalLines; i++) {
-        const line = lines[i];
-        if (line.length > 60 && line.includes("1N")) {
-          const groupCodeRaw = line.substring(30, 36).trim();
-          const rawDiscount = line.substring(36, 41).trim();
-
-          if (groupCodeRaw && !isNaN(rawDiscount)) {
-            const discountValue = parseFloat(rawDiscount);
-            
-            // 🚀 TVÄTT: Hoppa över rader med 0% rabatt direkt
-            if (discountValue > 0) {
-              const cleanCode = groupCodeRaw.replace(/\ufffd/g, 'Ä');
-              if (!importedData[cleanCode]) {
-                let label = line.substring(57, 95).trim()
-                                 .replace(/\ufffd/g, 'Ä')
-                                 .replace(/^[BT]ANSK\s+/, '');
-
-                importedData[cleanCode] = {
+      // DIN URSPRUNGLIGA REXEL-LOGIK (Sparar som t.ex. "0.42" för 42%)
+      const parseRexelContent = (content) => {
+        const lines = content.split('\n');
+        lines.forEach(line => {
+          const parts = line.trim().split(';');
+          if (parts.length >= 2) {
+            const key = parts[0].trim();
+            const rawDiscount = parts[1].trim();
+            if (key && !isNaN(rawDiscount)) {
+              const discountValue = parseFloat(rawDiscount) / 10;
+              if (discountValue > 0) {
+                importedData[key] = {
                   p: (discountValue / 100).toString(),
-                  l: label.substring(0, 20) || cleanCode // Korta ner label till 20 tecken
+                  l: key 
                 };
                 count++;
+              } else {
+                skipped++;
               }
-            } else {
-              skipped++;
             }
           }
+        });
+      };
+
+      if (fileName.endsWith('.zip')) {
+        const base64Data = await FileSystem.readAsStringAsync(fileUri, { 
+          encoding: FileSystem.EncodingType.Base64 
+        });
+        const zip = new JSZip();
+        const unzipped = await zip.loadAsync(base64Data, { base64: true });
+        
+        let mainFile = null;
+        let itemFile = null;
+
+        for (const path in unzipped.files) {
+          const p = path.toLowerCase();
+          if (p.endsWith('.txt')) {
+            if (p.includes('itemdiscount')) itemFile = path;
+            else mainFile = path;
+          }
         }
-        if (i % batchSize === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0));
+
+        if (mainFile) {
+          const content = await unzipped.file(mainFile).async('string');
+          parseRexelContent(content);
+        }
+        if (itemFile) {
+          const content = await unzipped.file(itemFile).async('string');
+          parseRexelContent(content);
+        }
+
+      } else {
+        const content = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.UTF8 });
+        
+        if (activeWholesaler?.id === 'rexel') {
+          parseRexelContent(content);
+        } else if (activeWholesaler?.id === 'ahlsell') {
+          // NY OCH FIXAD AHLSELL-LOGIK
+          const lines = content.split('\n');
+          lines.forEach(line => {
+            if (line.length > 60 && line.includes("1N")) {
+              // Fixar teckenkodningen direkt på nyckeln (B0100 -> BÄ0100)
+              const materialClass = line.substring(30, 36).trim().replace(/\ufffd/g, 'Ä');
+              
+              // Hämtar rabatten, t.ex. "0420" för 42.0%
+              const discountStr = line.substring(36, 40); 
+              const rawNum = parseInt(discountStr, 10);
+
+              if (materialClass && !isNaN(rawNum) && rawNum > 0) {
+                // Konverterar 420 till 0.42 (för att matcha hur Rexel fungerar)
+                const decimalDiscount = rawNum / 1000;
+
+                let label = line.substring(57, 95).trim()
+                                .replace(/\ufffd/g, 'Ä') 
+                                .replace(/^[BT]ANSK\s+/, '');
+
+                if (!importedData[materialClass]) {
+                  importedData[materialClass] = { 
+                    p: decimalDiscount.toString(), 
+                    l: label.substring(0, 25) || materialClass 
+                  };
+                  count++;
+                }
+              } else {
+                skipped++;
+              }
+            }
+          });
         }
       }
 
       setTempDiscounts(prev => ({ ...prev, ...importedData }));
-      Alert.alert("Import klar!", `Hittade ${count} unika grupper. Rensade bort ${skipped} rader utan rabatt.`);
+      Alert.alert("Import klar!", `Hittade ${count} rader som lades till i listan.`);
     } catch (error) {
-      Alert.alert("Fel", "Kunde inte läsa filen.");
+      console.error(error);
+      Alert.alert("Fel", "Kunde inte bearbeta filen.");
     } finally {
       setImporting(false);
     }
@@ -165,7 +219,6 @@ export default function SettingsScreen({ navigation }) {
   const handleDiscountChange = (groupId, value, label) => {
     let cleaned = value.replace(/[^0-9.]/g, "");
     if (parseFloat(cleaned) > 100) cleaned = "100";
-    
     setTempDiscounts(prev => ({ 
       ...prev, 
       [groupId]: { p: cleaned, l: (label || groupId).substring(0, 20) } 
@@ -177,39 +230,26 @@ export default function SettingsScreen({ navigation }) {
     setLoading(true);
     try {
       const discountRef = doc(db, "userDiscounts", auth.currentUser.uid);
-      
       const filtered = {};
       Object.keys(tempDiscounts).forEach(key => {
         const item = tempDiscounts[key];
         const val = item.p || item.percent;
         const discountNum = parseFloat(val);
-        
-        // 🚀 AGGRESSIV TVÄTT: Spara endast om rabatten är över 0%
         if (!isNaN(discountNum) && discountNum > 0) {
-          filtered[key] = {
-            p: val.toString(),
-            l: (item.l || item.label || key).substring(0, 20)
-          };
+          filtered[key] = { p: val.toString(), l: (item.l || item.label || key).substring(0, 20) };
         }
       });
-
       const updatedAgreements = { ...discountAgreements, [activeWholesaler.id]: filtered };
-      
-      // Spara som strängad JSON för att undvika Firebases indexeringsgränser
       const stringifiedData = JSON.stringify(updatedAgreements);
-      
       await setDoc(discountRef, { data: stringifiedData }, { merge: true });
-      
       setDiscountAgreements(updatedAgreements);
       setIsModalVisible(false);
       Alert.alert("Sparat!", "Dina rabatter är nu synkade.");
       Keyboard.dismiss();
     } catch (e) { 
       console.error(e);
-      Alert.alert("Fel", "Kunde inte spara. Filen är fortfarande för stor."); 
-    } finally { 
-      setLoading(false); 
-    }
+      Alert.alert("Fel", "Kunde inte spara."); 
+    } finally { setLoading(false); }
   };
 
   const getActiveDiscountsCount = (wholesalerId) => {
@@ -236,14 +276,9 @@ export default function SettingsScreen({ navigation }) {
     </TouchableOpacity>
   );
 
-  const importedCount = useMemo(() => {
-    const standardKeys = DISCOUNT_GROUPS.map(g => g.id);
-    return Object.keys(tempDiscounts).filter(k => !standardKeys.includes(k)).length;
-  }, [tempDiscounts]);
-
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top + 10 }]}>
+      <ScrollView contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top - 15 }]}>
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Ionicons name="chevron-back" size={28} color={WorkaholicTheme.colors.primary} />
@@ -267,27 +302,33 @@ export default function SettingsScreen({ navigation }) {
         </View>
 
         <Text style={styles.sectionTitle}>PROJEKTINSTÄLLNINGAR</Text>
-        <SettingRow 
-          icon="checkbox-outline" 
-          label="Egenkontroll-mall" 
-          subLabel="Redigera standardpunkter & enheter"
-          onPress={() => navigation.navigate("InspectionTemplate")}
-        >
-          <Ionicons name="chevron-forward" size={20} color="#ccc" />
-        </SettingRow>
-
-        <Text style={styles.sectionTitle}>MINA RABATTBREV</Text>
-        {WHOLESALERS.map(ws => (
+        {hasEgenkontrollMall && (
           <SettingRow 
-            key={ws.id}
-            icon={ws.icon} 
-            label={ws.name} 
-            subLabel={getActiveDiscountsCount(ws.id) > 0 ? `${getActiveDiscountsCount(ws.id)} rabattgrupper` : "Ej upplagt"}
-            onPress={() => openDiscountModal(ws)}
+            icon="checkbox-outline" 
+            label="Egenkontroll-mall" 
+            subLabel={isEl ? "Allmän & Golvvärme" : isVvs ? "VVS-mall" : "Bygg-mall"}
+            onPress={() => navigation.navigate("InspectionTemplate")}
           >
             <Ionicons name="chevron-forward" size={20} color="#ccc" />
           </SettingRow>
-        ))}
+        )}
+
+        <Text style={styles.sectionTitle}>MINA RABATTBREV</Text>
+        {visibleWholesalers.length === 0 ? (
+          <Text style={styles.hintText}>Sätt yrke i profilen (EL, Rör/VVS eller Bygg) för att se grossister och rabattgrupper.</Text>
+        ) : (
+          visibleWholesalers.map(ws => (
+            <SettingRow 
+              key={ws.id}
+              icon={ws.icon} 
+              label={ws.name} 
+              subLabel={getActiveDiscountsCount(ws.id) > 0 ? `${getActiveDiscountsCount(ws.id)} rabattgrupper` : "Ej upplagt"}
+              onPress={() => openDiscountModal(ws)}
+            >
+              <Ionicons name="chevron-forward" size={20} color="#ccc" />
+            </SettingRow>
+          ))
+        )}
 
         <Text style={styles.sectionTitle}>PREFERENSER</Text>
         <SettingRow icon="notifications-outline" label="Notiser">
@@ -318,28 +359,22 @@ export default function SettingsScreen({ navigation }) {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-              {activeWholesaler?.id === 'ahlsell' && (
+              {(activeWholesaler?.id === 'ahlsell' || activeWholesaler?.id === 'rexel') && (
                 <View style={styles.importSection}>
                   <TouchableOpacity style={styles.importCard} onPress={handleImportFile} disabled={importing}>
                     <View style={styles.importIconCircle}>
                       {importing ? <ActivityIndicator size="small" color={WorkaholicTheme.colors.primary} /> : <Ionicons name="document-attach-outline" size={22} color={WorkaholicTheme.colors.primary} />}
                     </View>
                     <View style={{flex: 1}}>
-                      <Text style={styles.importTitle}>Importera Ahlsell-fil</Text>
-                      <Text style={styles.importSub}>Snabbtvättar bort 0% rader</Text>
+                      <Text style={styles.importTitle}>Importera {activeWholesaler?.name}-fil</Text>
+                      <Text style={styles.importSub}>Välj fil från telefonen</Text>
                     </View>
                   </TouchableOpacity>
-                  {importedCount > 0 && (
-                    <View style={styles.statusBadge}>
-                      <Ionicons name="checkmark-circle" size={16} color="#34C759" />
-                      <Text style={styles.statusText}>{importedCount} aktiva rabattkoder redo</Text>
-                    </View>
-                  )}
                 </View>
               )}
 
               <Text style={styles.infoText}>Standardgrupper:</Text>
-              {DISCOUNT_GROUPS.map(group => {
+              {discountGroups.map(group => {
                 const item = tempDiscounts[group.id] || {};
                 const val = item.p || item.percent || "";
                 return (
@@ -352,7 +387,7 @@ export default function SettingsScreen({ navigation }) {
                         onChangeText={t => handleDiscountChange(group.id, t, group.label)}
                         placeholder="0"
                         keyboardType="numeric"
-                        maxLength={3}
+                        maxLength={4}
                       />
                       <Text style={styles.percentSymbol}>%</Text>
                     </View>
@@ -377,6 +412,7 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   title: { fontSize: 24, fontWeight: "800", color: WorkaholicTheme.colors.primary },
   sectionTitle: { fontSize: 11, fontWeight: "700", color: "#8E8E93", marginBottom: 10, marginTop: 15, letterSpacing: 1.2, textTransform: 'uppercase' },
+  hintText: { fontSize: 13, color: "#8E8E93", marginBottom: 12, lineHeight: 20 },
   logoSection: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 20, alignItems: 'center', marginBottom: 12, elevation: 2 },
   logoPreview: { width: 100, height: 100, borderRadius: 12, resizeMode: 'contain', marginBottom: 15 },
   logoPlaceholder: { backgroundColor: '#F2F2F7', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E5E5EA', borderStyle: 'dashed' },
@@ -399,8 +435,6 @@ const styles = StyleSheet.create({
   importIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   importTitle: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },
   importSub: { fontSize: 12, color: '#8E8E93', marginTop: 1 },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, backgroundColor: '#E8F5E9', alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  statusText: { fontSize: 12, color: '#2E7D32', fontWeight: '700' },
   infoText: { fontSize: 13, color: '#8E8E93', marginBottom: 15, fontWeight: '800', textTransform: 'uppercase' },
   discountRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F2F2F7' },
   discountLabel: { fontSize: 15, fontWeight: '700', color: '#333', flex: 1 },

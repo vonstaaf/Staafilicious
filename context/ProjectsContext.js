@@ -33,8 +33,8 @@ export const ProjectsProvider = ({ children }) => {
   const [allProducts, setAllProducts] = useState([]);
   const [discountAgreements, setDiscountAgreements] = useState({});
 
-  // 🔑 NYTT: Hantering av två olika mallar (Allmän & Golvvärme)
-  const [templates, setTemplates] = useState({ general: [], heating: [] });
+  // 🔑 Mallar per yrke: El (general, heating), VVS (vvs), Bygg (bygg)
+  const [templates, setTemplates] = useState({ general: [], heating: [], vvs: [], bygg: [] });
   // Behåller denna för bakåtkompatibilitet med createProject-logiken
   const inspectionTemplate = useMemo(() => templates.general, [templates]);
 
@@ -172,10 +172,10 @@ export const ProjectsProvider = ({ children }) => {
       // 🔑 5. Lyssna på Master-mallar (Kollektion för flera typer)
       const templatesRef = collection(db, "users", user.uid, "templates");
       unsubscribeTemplates = onSnapshot(templatesRef, (snap) => {
-        const tData = { general: [], heating: [] };
-        snap.forEach(doc => {
-          if (doc.id === 'general' || doc.id === 'heating') {
-            tData[doc.id] = doc.data().items || [];
+        const tData = { general: [], heating: [], vvs: [], bygg: [] };
+        snap.forEach(docSnap => {
+          if (['general', 'heating', 'vvs', 'bygg'].includes(docSnap.id)) {
+            tData[docSnap.id] = docSnap.data().items || [];
           }
         });
         setTemplates(tData);
@@ -252,7 +252,8 @@ export const ProjectsProvider = ({ children }) => {
       kostnader: [],
       products: [],
       inspectionItems: templateToUse,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      ...(companyData?.companyId ? { companyId: companyData.companyId } : {}),
     };
     
     const docRef = await addDoc(collection(db, "groups"), newProjectData);

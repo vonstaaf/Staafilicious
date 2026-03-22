@@ -18,6 +18,12 @@ import InspectionScreen from "../screens/InspectionScreen";
 import InspectionHistoryScreen from "../screens/InspectionHistoryScreen"; 
 import GroupScheduleScreen from "../screens/GroupScheduleScreen";
 import CableScreen from "../screens/CableScreen";
+import PressureTestScreen from "../screens/PressureTestScreen";
+import SmartEgenkontrollScreen from "../screens/SmartEgenkontrollScreen";
+import BarcodeScanScreen from "../screens/BarcodeScanScreen";
+import RelationsritningScreen from "../screens/RelationsritningScreen";
+import VarningScreen from "../screens/VarningScreen";
+import AiWorkOrderScreen from "../screens/AiWorkOrderScreen";
 
 // Skärmar (System & Profil)
 import SettingsScreen from "../screens/SettingsScreen";
@@ -56,6 +62,12 @@ export default function MainStack() {
       <Stack.Screen name="InspectionHistory" component={InspectionHistoryScreen} />
       <Stack.Screen name="GroupSchedule" component={GroupScheduleScreen} />
       <Stack.Screen name="CableGuide" component={CableScreen} />
+      <Stack.Screen name="PressureTest" component={PressureTestScreen} />
+      <Stack.Screen name="SmartEgenkontroll" component={SmartEgenkontrollScreen} />
+      <Stack.Screen name="BarcodeScan" component={BarcodeScanScreen} />
+      <Stack.Screen name="Relationsritning" component={RelationsritningScreen} />
+      <Stack.Screen name="Varning" component={VarningScreen} />
+      <Stack.Screen name="AiWorkOrder" component={AiWorkOrderScreen} />
       
       {/* 6. SYSTEM & PROFIL */}
       <Stack.Screen 

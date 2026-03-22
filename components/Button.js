@@ -2,6 +2,7 @@
 import React from "react";
 import { TouchableOpacity, Text, StyleSheet } from "react-native";
 import { WorkaholicTheme } from "../theme";
+import { useTheme } from "../context/ThemeContext";
 
 export default function Button({
   title,
@@ -10,23 +11,24 @@ export default function Button({
   style,
   disabled = false, // 🔑 stöd för disabled state
 }) {
+  const theme = useTheme();
   const backgroundColor =
     type === "primary"
-      ? WorkaholicTheme.colors.primary
+      ? theme.colors.primary
       : type === "secondary"
-      ? WorkaholicTheme.colors.secondary
-      : WorkaholicTheme.colors.surface;
+      ? theme.colors.secondary
+      : theme.colors.surface;
 
   const textColor =
     type === "primary" || type === "secondary"
       ? "#FFFFFF"
-      : WorkaholicTheme.colors.textPrimary;
+      : theme.colors.textPrimary;
 
   return (
     <TouchableOpacity
       style={[
         styles.button,
-        { backgroundColor: disabled ? WorkaholicTheme.colors.textSecondary : backgroundColor },
+        { backgroundColor: disabled ? theme.colors.textSecondary : backgroundColor },
         style,
       ]}
       onPress={disabled ? null : onPress}

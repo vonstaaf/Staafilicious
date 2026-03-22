@@ -21,7 +21,7 @@ export const handleInspectionPdf = async (project, inspection, companyData) => {
   try {
     const company = companyData || {};
     
-    // 1. App-loggan (Base64)
+    // 1. App-loggan (Base64) - Nu 90px i HTML
     const appLogo = await getBase64Image(APP_LOGO_URL);
     
     // 2. Skottsäker hämtning av Företagsloggan
@@ -36,8 +36,12 @@ export const handleInspectionPdf = async (project, inspection, companyData) => {
     // 3. Bearbeta inspektionsbilder (Base64)
     const processedImages = await Promise.all(
       (inspection.images || []).map(async (img) => {
-        const b64 = await getBase64Image(img);
-        return b64;
+        try {
+          const b64 = await getBase64Image(img);
+          return b64;
+        } catch (e) {
+          return null;
+        }
       })
     );
     
@@ -52,103 +56,195 @@ export const handleInspectionPdf = async (project, inspection, companyData) => {
       <html>
         <head>
           <style>
-            @page { margin: 15px; }
-            body { font-family: Helvetica, Arial, sans-serif; color: #333; font-size: 10px; }
-            .header-table { width: 100%; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; border-collapse: collapse; }
-            .header-table td { border: none !important; vertical-align: middle; }
+            @page { margin: 20px; }
+            body { font-family: Helvetica, Arial, sans-serif; color: #333; font-size: 11px; line-height: 1.4; }
             
-            .logo-img { 
-              height: 60px; 
+            /* 🔑 DIN NYA STANDARD-HEADER (30/40/30) */
+            .header-table { 
+              width: 100%; 
+              border-bottom: 3px solid #1C1C1E; 
+              padding-bottom: 15px; 
+              margin-bottom: 25px; 
+              border-collapse: collapse; 
+            }
+            .header-table td { border: none !important; vertical-align: middle; }
+
+            .logo-main { 
+              max-height: 100px; 
               width: auto; 
               display: block; 
-              max-width: 200px;
+              margin: 0 auto; 
+              max-width: 100%;
               object-fit: contain;
             }
 
-            h1 { color: #6200EE; text-align: center; font-size: 18px; margin: 10px 0; }
-            .section-title { background: #f2f2f2; padding: 5px; border-left: 4px solid #6200EE; font-weight: bold; margin-top: 15px; }
-            table.data { width: 100%; border-collapse: collapse; margin-top: 5px; }
-            table.data td, table.data th { border: 1px solid #ddd; padding: 6px; text-align: left; }
-            table.data th { background-color: #f9f9f9; }
+            .company-info {
+              text-align: right;
+              font-size: 11px;
+              line-height: 1.3;
+              color: #1C1C1E;
+            }
+            .company-title {
+              font-size: 16px; 
+              font-weight: bold;
+              margin-bottom: 2px;
+            }
+
+            h1 { color: #6200EE; text-align: center; font-size: 22px; margin: 15px 0; letter-spacing: 1px; }
             
-            .photo-grid { display: flex; flex-wrap: wrap; margin-top: 20px; }
-            .photo-grid img { width: 48%; height: 220px; object-fit: cover; margin: 1%; border-radius: 5px; border: 1px solid #ddd; }
+            .project-summary {
+              background: #F8F9FB;
+              padding: 15px;
+              border-radius: 10px;
+              text-align: center;
+              margin-bottom: 20px;
+              border: 1px solid #EEE;
+              color: #1C1C1E;
+            }
+
+            .section-title { 
+              background: #1C1C1E; 
+              color: #FFF;
+              padding: 8px 12px; 
+              font-weight: bold; 
+              margin-top: 25px; 
+              border-radius: 4px;
+              font-size: 12px;
+              text-transform: uppercase;
+            }
+
+            table.data { width: 100%; border-collapse: collapse; margin-top: 8px; }
+            table.data td, table.data th { border: 1px solid #EEE; padding: 10px; text-align: left; }
+            table.data th { background-color: #F2F2F7; font-size: 10px; text-transform: uppercase; color: #666; }
             
-            .signature-img { height: 60px; width: auto; margin-top: 10px; }
+            .status-badge {
+              font-weight: bold;
+              padding: 4px 8px;
+              border-radius: 4px;
+              text-align: center;
+              display: inline-block;
+              min-width: 40px;
+            }
+
+            .photo-page { page-break-before: always; }
+            .photo-grid { display: flex; flex-wrap: wrap; margin-top: 20px; gap: 12px; }
+            .photo-grid img { width: calc(50% - 6px); height: 280px; object-fit: cover; border-radius: 8px; border: 1px solid #EEE; box-sizing: border-box; }
+            
+            .footer-sig { margin-top: 40px; border-top: 2px solid #EEE; padding-top: 20px; }
+            .signature-img { height: 80px; width: auto; margin-top: 10px; border: 1px solid #F5F5F5; }
           </style>
         </head>
         <body>
           <table class="header-table">
             <tr>
               <td style="width: 30%;">
-                ${appLogo ? `<img src="${appLogo}" class="logo-img" />` : ""}
+                ${appLogo ? `<img src="${appLogo}" style="height: 90px; opacity: 1;" />` : ""}
               </td>
               <td style="width: 40%; text-align: center;">
-                ${companyLogo ? `<img src="${companyLogo}" class="logo-img" style="margin: 0 auto;"/>` : `<strong>${cName}</strong>`}
+                ${companyLogo ? `<img src="${companyLogo}" class="logo-main" />` : `<div class="company-title">${cName}</div>`}
               </td>
-              <td style="width: 30%; text-align: right; font-size: 8px; line-height: 1.2;">
-                <strong>${cName}</strong><br/>
+              <td style="width: 30%;" class="company-info">
+                <div class="company-title">${cName}</div>
                 ${company.orgNr ? `Org.nr: ${company.orgNr}<br/>` : ""}
                 ${company.address || ""}<br/>
-                ${company.zipCity || ""}<br/>
-                ${company.phone || ""}
+                ${company.zipCity || (company.zipCode ? `${company.zipCode} ${company.city || ''}` : "")}<br/>
+                ${company.phone ? `Tel: ${company.phone}<br/>` : ""}
+                ${company.website || ""}
               </td>
             </tr>
           </table>
 
-          <h1>EGENKONTROLL / PRODUKTKONTROLL</h1>
-          <p style="text-align:center;">
-            <strong>PROJEKT:</strong> ${(project.name || "").toUpperCase()} | 
-            <strong>UTFÖRD:</strong> ${inspection.description || 'Slutkontroll'} |
+          <h1>EGENKONTROLLPROTOKOLL</h1>
+          
+          <div class="project-summary">
+            <strong>PROJEKT:</strong> ${(project.name || "").toUpperCase()} &nbsp; | &nbsp;
+            <strong>TYP:</strong> ${inspection.description || 'Allmän kontroll'} &nbsp; | &nbsp;
             <strong>DATUM:</strong> ${dateStr}
-          </p>
+          </div>
           
           ${sections.map(sec => {
               const sectionItems = allItems.filter(i => i.section === sec);
               return `
-               <div class="section-title">${sec.toUpperCase()}</div>
-               <table class="data">
-                 <thead><tr><th>Kontrollpunkt</th><th style="width:50px; text-align:center;">Status</th><th>Notering / Mätvärde</th></tr></thead>
-                 <tbody>
-                   ${sectionItems.map(i => {
-                     const statusVal = inspection.checks?.[i.id];
-                     let statusText = '-';
-                     if (statusVal === 'checked') statusText = 'OK';
-                     if (statusVal === 'na') statusText = 'E/A';
-                     if (statusVal === 'fail') statusText = 'FEL';
-                     
-                     const rawComment = inspection.rowComments?.[i.id] || "";
-                     const unitSymbol = getUnitSymbol(i.unit);
-                     
-                     // Kombinera mätvärde med enhet om enhet finns, annars visa bara kommentaren
-                     const displayValue = (rawComment && unitSymbol) 
-                        ? `${rawComment} ${unitSymbol}` 
+                <div class="section-title">${sec.toUpperCase()}</div>
+                <table class="data">
+                  <thead>
+                    <tr>
+                      <th>Kontrollpunkt / Instruktion</th>
+                      <th style="width:70px; text-align:center;">Resultat</th>
+                      <th>Notering / Mätvärde</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${sectionItems.map(i => {
+                      const statusVal = inspection.checks?.[i.id];
+                      let statusText = '-';
+                      let statusColor = '#EEE';
+                      let textColor = '#333';
+
+                      if (statusVal === 'checked') { statusText = 'OK'; statusColor = '#E8F5E9'; textColor = '#2E7D32'; }
+                      if (statusVal === 'na') { statusText = 'E/A'; statusColor = '#F2F2F7'; textColor = '#8E8E93'; }
+                      if (statusVal === 'fail') { statusText = 'FEL'; statusColor = '#FFEBEE'; textColor = '#C62828'; }
+                      
+                      const rawComment = inspection.rowComments?.[i.id] || "";
+                      const unitSymbol = getUnitSymbol(i.unit);
+                      
+                      const displayValue = (rawComment && unitSymbol) 
+                        ? `<strong>${rawComment}</strong> ${unitSymbol}` 
                         : rawComment;
-                     
-                     return `
-                       <tr>
-                         <td>${i.label}</td>
-                         <td style="text-align:center; font-weight:bold; color: ${statusText === 'OK' ? '#2e7d32' : statusText === 'FEL' ? '#d32f2f' : '#333'};">${statusText}</td>
-                         <td>${displayValue}</td>
-                       </tr>`;
-                   }).join('')}
-                 </tbody>
-               </table>
+                      
+                      return `
+                        <tr>
+                          <td>
+                            <strong>${i.label}</strong>
+                            ${i.desc ? `<br/><span style="font-size: 9px; color: #888;">${i.desc}</span>` : ""}
+                          </td>
+                          <td style="text-align:center;">
+                            <span class="status-badge" style="background-color: ${statusColor}; color: ${textColor};">
+                              ${statusText}
+                            </span>
+                          </td>
+                          <td>${displayValue}</td>
+                        </tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
               `;
           }).join('')}
 
-          ${processedImages.length > 0 ? `
-            <div style="page-break-before: always;">
-              <div class="section-title">BILDDOKUMENTATION</div>
-              <div class="photo-grid">
-                ${processedImages.map(img => img ? `<img src="${img}" />` : '').join('')}
-              </div>
-            </div>` : ''
-          }
+          ${(() => {
+            const validImages = processedImages.filter(img => img !== null);
+            if (validImages.length === 0) return '';
+            const MAX_PER_PAGE = 4;
+            const MIN_PER_PAGE = 2;
+            const chunks = [];
+            let i = 0;
+            while (i < validImages.length) {
+              let take = Math.min(MAX_PER_PAGE, validImages.length - i);
+              if (take === 1 && chunks.length > 0) {
+                const lastChunk = chunks.pop();
+                const moved = lastChunk[lastChunk.length - 1];
+                chunks.push(lastChunk.slice(0, -1));
+                chunks.push([moved, validImages[i]]);
+                i += 2;
+                continue;
+              }
+              chunks.push(validImages.slice(i, i + take));
+              i += take;
+            }
+            return chunks.map((pageImages, pageIndex) => `
+              <div class="photo-page">
+                <div class="section-title">FOTODOKUMENTATION${chunks.length > 1 ? ` (sida ${pageIndex + 1}/${chunks.length})` : ''}</div>
+                <div class="photo-grid">
+                  ${pageImages.map(img => `<img src="${img}" alt="" />`).join('')}
+                </div>
+              </div>`).join('');
+          })()}
 
-          <div style="margin-top: 30px; border-top: 1px solid #ccc; padding-top: 10px;">
-            <p><strong>Signerat av:</strong> ${inspection.signedBy || inspection.signerName || '-'}</p>
+          <div class="footer-sig">
+            <p style="font-size: 12px;"><strong>Protokollet upprättat och signerat av:</strong></p>
+            <p style="font-size: 14px; margin-bottom: 5px;">${inspection.signedBy || inspection.signerName || '-'}</p>
             ${inspection.signature ? `<img src="${inspection.signature}" class="signature-img" />` : ''}
+            <p style="font-size: 9px; color: #AAA; margin-top: 10px;">Detta dokument är genererat via Workaholic Pro.</p>
           </div>
         </body>
       </html>

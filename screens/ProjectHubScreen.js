@@ -33,6 +33,14 @@ export default function ProjectHubScreen({ navigation, route }) {
 
   const TILES = [
     {
+      id: 'aiWorkOrder',
+      title: 'AI ARBETSORDER',
+      sub: 'Fritext → tid & material',
+      icon: 'sparkles-outline',
+      color: '#AF52DE',
+      screen: 'AiWorkOrder'
+    },
+    {
       id: 'finance',
       title: 'EKONOMI & MATERIAL',
       sub: 'Produkter, utlägg & tid',

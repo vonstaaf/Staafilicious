@@ -30,8 +30,12 @@ const formatNumber = (n) => {
 
 export default function SettlementScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
-  const { selectedProject } = useContext(ProjectsContext);
-  const project = route.params?.project || selectedProject;
+  const { projects, selectedProject } = useContext(ProjectsContext);
+  const projectId = route.params?.project?.id || selectedProject?.id;
+  const project = useMemo(
+    () => (projects.find((p) => p.id === projectId) || selectedProject) ?? route.params?.project,
+    [projects, projectId, selectedProject, route.params?.project]
+  );
 
   // States för laddningssnurrorna och företagsdatan
   const [isGeneratingCustomer, setIsGeneratingCustomer] = useState(false);

@@ -6,16 +6,18 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Skärmar
 import HomeScreen from "../screens/HomeScreen"; 
-import ProjectListScreen from "../screens/ProjectListScreen"; 
+import ProjectListScreen from "../screens/ProjectListScreen";
+import PlaneringScreen from "../screens/PlaneringScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 
-import { WorkaholicTheme } from "../theme";
+import { useTheme } from "../context/ThemeContext";
 import { useBadges } from "../context/BadgeContext"; 
 
 const Tab = createBottomTabNavigator();
 
 export default function MainTabs() {
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const { notificationsCount, setNotificationsCount } = useBadges();
 
   return (
@@ -25,7 +27,7 @@ export default function MainTabs() {
         headerTitleAlign: "center",
         headerTintColor: "#FFFFFF",
         headerStyle: {
-          backgroundColor: WorkaholicTheme.colors.primary,
+          backgroundColor: theme.colors.primary,
           elevation: 0,
           shadowOpacity: 0,
         },
@@ -40,11 +42,12 @@ export default function MainTabs() {
           let iconName;
           if (route.name === "Start") iconName = focused ? "grid" : "grid-outline";
           else if (route.name === "Projects") iconName = focused ? "folder-open" : "folder-outline";
+          else if (route.name === "Planering") iconName = focused ? "calendar" : "calendar-outline";
           else if (route.name === "Profile") iconName = focused ? "person" : "person-outline";
           
           return <Ionicons name={iconName} size={size - 2} color={color} />;
         },
-        tabBarActiveTintColor: WorkaholicTheme.colors.primary,
+        tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: "#999",
         tabBarStyle: {
           backgroundColor: "#FFF",
@@ -69,28 +72,36 @@ export default function MainTabs() {
         }
       })}
     >
-      {/* 1. START (Skapa/Anslut) */}
-      <Tab.Screen 
-        name="Start" 
-        component={HomeScreen} 
-        options={{ title: "START" }} 
-      />
-      
-      {/* 2. PROJEKT (Hantera alla jobb) */}
-      <Tab.Screen 
-        name="Projects" 
-        component={ProjectListScreen} 
-        options={{ title: "PROJEKT" }} 
+      {/* 1. START (Skapa/Anslut) – använder egen AppHeader */}
+      <Tab.Screen
+        name="Start"
+        component={HomeScreen}
+        options={{ title: "START", headerShown: false }}
       />
 
-      {/* 3. PROFIL */}
+      {/* 2. PROJEKT (Hantera alla jobb) – använder egen AppHeader */}
+      <Tab.Screen
+        name="Projects"
+        component={ProjectListScreen}
+        options={{ title: "PROJEKT", headerShown: false }}
+      />
+
+      {/* 3. PLANERING – använder egen AppHeader */}
+      <Tab.Screen
+        name="Planering"
+        component={PlaneringScreen}
+        options={{ title: "PLANERING", headerShown: false }}
+      />
+
+      {/* 4. PROFIL – samma rundade header som Start */}
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
           title: "PROFIL",
+          headerShown: false,
           tabBarBadge: notificationsCount > 0 ? notificationsCount : null,
-          tabBarBadgeStyle: { backgroundColor: WorkaholicTheme.colors.error, color: "white", fontSize: 10 },
+          tabBarBadgeStyle: { backgroundColor: theme.colors.error, color: "white", fontSize: 10 },
         }}
         listeners={{ tabPress: () => setNotificationsCount(0) }}
       />
