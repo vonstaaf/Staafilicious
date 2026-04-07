@@ -9,23 +9,45 @@ import {
   StatusBar,
   ScrollView,
   Alert,
+  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ProjectsContext } from "../context/ProjectsContext";
+import { WORKAHOLIC_API_BASE } from "../constants/workaholicApi";
 import { formatProjectName } from "../utils/stringHelpers";
 import { auth } from "../firebaseConfig";
 import { signOut } from "firebase/auth";
 import { useTheme } from "../context/ThemeContext";
 import AppHeader from "../components/AppHeader";
+import { CompanyContext } from "../context/CompanyContext";
+import { getTotalSeatCount, getTrialDaysLeft, getTrialProgressPercent } from "../utils/subscriptionAccess";
+
+/** Samma bas som API (env / app.json extra / production). */
+const WEB_URL = WORKAHOLIC_API_BASE;
 
 export default function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { createProject, importProject, selectedProject } = useContext(ProjectsContext);
+  const { company } = useContext(CompanyContext) || {};
   
   const [projectName, setProjectName] = useState("");
   const [projectCode, setProjectCode] = useState("");
+  const status = String(company?.subscriptionStatus || "").toLowerCase();
+  const trialDaysLeft = getTrialDaysLeft(company);
+  const trialProgress = getTrialProgressPercent(company);
+  const totalSeats = getTotalSeatCount(company);
+  const usedSeats = Number(company?.licenseUsed || 0);
+  const seatUsagePct = totalSeats > 0 ? Math.min(100, Math.round((usedSeats / totalSeats) * 100)) : 0;
+  const isTrialing = status === "trialing";
+  const isActive = status === "active";
+  const showTrialBanner = isTrialing && trialDaysLeft > 0;
+  const trialPackages = [
+    { key: "small", name: "Small", licenses: 5, monthlyPrice: 350 },
+    { key: "medium", name: "Medium", licenses: 10, monthlyPrice: 700 },
+    { key: "large", name: "Large", licenses: 25, monthlyPrice: 1750 },
+  ];
 
   const handleCreate = async () => {
     const cleanedName = formatProjectName(projectName);
@@ -79,6 +101,72 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {showTrialBanner && (
+          <View style={styles.trialBanner}>
+            <Text style={styles.trialBannerText}>
+              Du har {trialDaysLeft} dagar kvar av din provperiod.
+            </Text>
+            <TouchableOpacity onPress={() => Linking.openURL(`${WEB_URL}/kassa`)}>
+              <Text style={styles.trialBannerLink}>Uppgradera nu</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {(isTrialing || isActive) && (
+          <View style={styles.licenseStatusCard}>
+            {isTrialing ? (
+              <>
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>PROVPERIOD</Text>
+                  <Text style={styles.statusValue}>{trialDaysLeft} dagar kvar</Text>
+                </View>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFillTrial, { width: `${trialProgress}%` }]} />
+                </View>
+              </>
+            ) : (
+              <View style={styles.statusRow}>
+                <Text style={styles.statusLabel}>STATUS</Text>
+                <Text style={styles.statusValueActive}>Fullversion aktiv</Text>
+              </View>
+            )}
+
+            <View style={styles.licenseMeterWrap}>
+              <View style={styles.statusRow}>
+                <Text style={styles.licenseTitle}>Använda licenser</Text>
+                <Text style={styles.licenseCount}>{seatUsagePct}%</Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFillPrimary, { width: `${seatUsagePct}%` }]} />
+              </View>
+              <Text style={styles.licenseText}>
+                Du har {usedSeats} av {totalSeats || 0} licenser i bruk.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {isTrialing && (
+          <View style={styles.packagesCard}>
+            <Text style={styles.packagesTitle}>Välj paket</Text>
+            <Text style={styles.packagesSub}>Påminn chefen att uppgradera innan provperioden tar slut.</Text>
+            {trialPackages.map((pkg) => (
+              <View key={pkg.key} style={styles.packageRow}>
+                <View>
+                  <Text style={styles.packageName}>{pkg.name}</Text>
+                  <Text style={styles.packageInfo}>{pkg.licenses} licenser · {pkg.monthlyPrice} kr/mån</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.packageBtn}
+                  onPress={() => Linking.openURL(`${WEB_URL}/kassa?antal=${pkg.licenses}`)}
+                >
+                  <Text style={styles.packageBtnText}>Välj</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* AKTIVT PROJEKT GENVÄG */}
         {selectedProject ? (
           <View style={styles.activeProjectCard}>
@@ -206,5 +294,145 @@ const styles = StyleSheet.create({
   input: { flex: 1, backgroundColor: "#F5F5F7", padding: 16, borderRadius: 15, fontSize: 14, fontWeight: '700', color: '#1C1C1E' },
   addBtn: { width: 55, borderRadius: 15, justifyContent: "center", alignItems: "center", elevation: 2 },
   divider: { height: 1, backgroundColor: '#F8F9FB', marginVertical: 25 },
-  infoFooter: { textAlign: 'center', fontSize: 10, color: '#DDD', fontWeight: '800', marginTop: 30, letterSpacing: 1 }
+  infoFooter: { textAlign: 'center', fontSize: 10, color: '#DDD', fontWeight: '800', marginTop: 30, letterSpacing: 1 },
+  trialBanner: {
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  trialBannerText: {
+    flex: 1,
+    color: "#92400E",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  trialBannerLink: {
+    color: "#7C3AED",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  licenseStatusCard: {
+    backgroundColor: "#1F2937",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#374151",
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  statusLabel: {
+    color: "#9CA3AF",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  statusValue: {
+    color: "#FBBF24",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  statusValueActive: {
+    color: "#34D399",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  progressTrack: {
+    width: "100%",
+    height: 8,
+    borderRadius: 6,
+    backgroundColor: "#374151",
+    overflow: "hidden",
+  },
+  progressFillTrial: {
+    height: "100%",
+    borderRadius: 6,
+    backgroundColor: "#F59E0B",
+  },
+  progressFillPrimary: {
+    height: "100%",
+    borderRadius: 6,
+    backgroundColor: "#8B5CF6",
+  },
+  licenseMeterWrap: {
+    marginTop: 6,
+    gap: 8,
+  },
+  licenseTitle: {
+    color: "#D1D5DB",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  licenseCount: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  licenseText: {
+    color: "#9CA3AF",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  packagesCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  packagesTitle: {
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  packagesSub: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  packageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  packageName: {
+    color: "#111827",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  packageInfo: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  packageBtn: {
+    backgroundColor: "#8B5CF6",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  packageBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
 });

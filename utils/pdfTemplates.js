@@ -224,7 +224,7 @@ export const getMaterialHtml = (data) => {
 };
 
 /**
- * GRUPPSCHEMA / GRUPPFÖRTECKNING (PUNKT 7)
+ * PROJEKTSCHEMA / PROJEKTFÖRTECKNING (PUNKT 7)
  */
 export const getGroupScheduleHtml = (projectContext, scheduleData) => {
   const companyData = projectContext?.companyData || projectContext?.c || {};
@@ -260,7 +260,7 @@ export const getGroupScheduleHtml = (projectContext, scheduleData) => {
     return `
       <div class="page-container">
         ${getStandardHeader({ companyData, companyLogo: projectContext.companyLogo, appLogo: projectContext.appLogo }, isA5 ? 50 : 75)}
-        <h2 style="font-size:14px; margin: 10px 0 5px 0;">GRUPPFÖRTECKNING - ${projectName}</h2>
+        <h2 style="font-size:14px; margin: 10px 0 5px 0;">PROJEKTFÖRTECKNING - ${projectName}</h2>
         <table style="width:100%; border:1px solid #000; border-collapse:collapse; margin-bottom:10px; font-size:9px;">
           <tr>
             <td style="padding:5px; border:1px solid #000;"><strong>Anläggning:</strong> ${header.anlaggning || projectName}</td>

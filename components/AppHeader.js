@@ -26,15 +26,16 @@ export default function AppHeader({
   const { company } = useContext(CompanyContext) || {};
 
   const formattedTitle = title ? capitalizeFirst(title) : '';
-  const showCompanyBranding = Boolean(company && (company.logoUrl || (company.companyName || company.name)));
+  const logoUrl = company?.companyLogoUrl || company?.logoUrl;
+  const showCompanyBranding = Boolean(company && (logoUrl || (company.companyName || company.name)));
 
   let logoContent = null;
   if (showCompanyBranding) {
-    if (company.logoUrl) {
+    if (logoUrl) {
       logoContent = (
         <View style={[styles.companyLogoContainer, { width: COMPANY_LOGO_SIZE, height: COMPANY_LOGO_SIZE }]}>
           <Image
-            source={{ uri: company.logoUrl }}
+            source={{ uri: logoUrl }}
             style={[styles.companyLogo, { width: COMPANY_LOGO_SIZE, height: COMPANY_LOGO_SIZE }]}
             resizeMode="contain"
           />

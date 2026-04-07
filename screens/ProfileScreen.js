@@ -25,6 +25,7 @@ import { ProjectsContext } from "../context/ProjectsContext";
 import { useBadges } from "../context/BadgeContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppHeader from "../components/AppHeader";
+import { formatProjectName } from "../utils/stringHelpers";
 
 function profileRoleToProfessionKeys(role) {
   if (role === "El") return ["el"];
@@ -75,7 +76,7 @@ export default function ProfileScreen({ navigation }) {
         else if (pLower.includes("Bygg") || pLower.includes("bygg")) setProfession("Bygg");
         else if (pLower.includes("rör") || pLower.includes("vvs")) setProfession("Rör");
         else setProfession(fetchedProf);
-        setCompanyName(d.companyName || "");
+        setCompanyName(formatProjectName(d.companyName || ""));
         setOrgNr(d.orgNr || "");
         setPhone(d.phone || "");
         setAddress(d.address || "");
@@ -109,6 +110,7 @@ export default function ProfileScreen({ navigation }) {
   const handleSave = async () => {
     setLoading(true);
     try {
+      const normalizedCompanyName = formatProjectName(companyName);
       if (user && displayName !== user.displayName) await updateProfile(user, { displayName });
       if (newPassword && newPassword === confirmPassword) {
         await updatePassword(user, newPassword);
@@ -120,8 +122,9 @@ export default function ProfileScreen({ navigation }) {
       }
       await updateDoc(doc(db, "users", user.uid), {
         profession: profession, 
-        companyName, orgNr, phone, address, zipCity, website
+        companyName: normalizedCompanyName, orgNr, phone, address, zipCity, website
       });
+      setCompanyName(normalizedCompanyName);
       Alert.alert("Sparat", "Din profil och yrkesroll har uppdaterats.");
     } catch (e) { Alert.alert("Fel", "Kunde inte spara profil."); }
     finally { setLoading(false); }

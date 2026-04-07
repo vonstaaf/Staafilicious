@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useMemo } from "react";
+import React, { createContext, useState, useEffect, useMemo, useContext } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db, auth } from "../firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
@@ -227,21 +227,6 @@ export const ProjectsProvider = ({ children }) => {
     
     const formattedName = formatProjectName(name);
     const codeToUse = code ? code.toString().toUpperCase().trim() : generateProjectCode();
-    
-    // Använd templates.general som default-mall vid skapande
-    let templateToUse = templates.general.length > 0 ? templates.general : [];
-
-    if (templateToUse.length === 0) {
-        try {
-          const templateRef = doc(db, "users", auth.currentUser.uid, "templates", "general");
-          const templateSnap = await getDoc(templateRef);
-          if (templateSnap.exists()) {
-            templateToUse = templateSnap.data().items || [];
-          }
-        } catch (err) {
-          console.log("Kunde inte hämta standardmall:", err);
-        }
-    }
 
     const newProjectData = {
       name: formattedName,
@@ -251,7 +236,8 @@ export const ProjectsProvider = ({ children }) => {
       status: "active",
       kostnader: [],
       products: [],
-      inspectionItems: templateToUse,
+      /** Tom tills montören väljer Allmän/Golvvärme i egenkontroll (undviker att mallvalet hoppas över). */
+      inspectionItems: [],
       createdAt: new Date().toISOString(),
       ...(companyData?.companyId ? { companyId: companyData.companyId } : {}),
     };
@@ -336,3 +322,16 @@ export const ProjectsProvider = ({ children }) => {
     </ProjectsContext.Provider>
   );
 };
+
+/**
+ * Samma värde som useContext(ProjectsContext) — används av AiWorkOrderScreen m.fl.
+ * Projekt hämtas via Firestore där användaren är medlem (members array-contains uid),
+ * inte baserat på admin-roll.
+ */
+export function useProjects() {
+  const ctx = useContext(ProjectsContext);
+  if (ctx == null) {
+    throw new Error("useProjects måste användas inom ProjectsProvider.");
+  }
+  return ctx;
+}

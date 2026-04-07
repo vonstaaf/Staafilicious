@@ -3,6 +3,7 @@ import * as Sharing from 'expo-sharing';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 import { getBase64Image } from '../imageHelpers';
+import { logError } from "../logger";
 
 const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
 
@@ -18,7 +19,7 @@ export const handleCustomerPdf = async (project, companyData, options = { showVa
     const appLogo = await getBase64Image(APP_LOGO_URL);
     
     // 2. Skottsäker hämtning av Företagsloggan
-    let logoToUse = company.logoUrl;
+    let logoToUse = company.companyLogoUrl || company.logoUrl;
     if (!logoToUse) {
       logoToUse = await AsyncStorage.getItem('@company_logo'); 
     }
@@ -236,7 +237,7 @@ export const handleCustomerPdf = async (project, companyData, options = { showVa
     const { uri } = await Print.printToFileAsync({ html });
     await Sharing.shareAsync(uri);
   } catch (e) {
-    console.error("Customer PDF Error:", e);
+    await logError(e, { source: "mobile", feature: "pdf", model: "CustomerPdf" });
     Alert.alert("Fel", "Kunde inte skapa kundunderlag.");
   }
 };

@@ -2,6 +2,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBase64Image } from '../imageHelpers';
+import { logError } from "../logger";
 
 const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
 
@@ -24,7 +25,7 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
     let appLogo = null;
     try { appLogo = await getBase64Image(APP_LOGO_URL); } catch(e){}
     
-    let logoToUse = company.logoUrl;
+    let logoToUse = company.companyLogoUrl || company.logoUrl;
     if (!logoToUse) {
       logoToUse = await AsyncStorage.getItem('@company_logo'); 
     }
@@ -204,7 +205,7 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                 </table>
 
                 <h2 style="font-size: ${isA5 ? '16px' : '20px'}; margin: 5px 0 10px 0; text-align:center; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 5px;">
-                  Gruppförteckning - ${project.name}
+                  Projektförteckning - ${project.name}
                 </h2>
                 
                 <table class="data-table" style="margin-bottom: 10px;">
@@ -227,7 +228,7 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                     <thead>
                       <tr>
                         <th style="width: 14%;">Nr</th>
-                        <th style="width: 56%;">Omfattning / Grupp</th>
+                        <th style="width: 56%;">Omfattning / Projekt</th>
                         <th style="width: 15%;">A</th>
                         <th style="width: 15%;">mm²</th>
                       </tr>
@@ -247,7 +248,7 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                     <thead>
                       <tr>
                         <th style="width: 14%;">Nr</th>
-                        <th style="width: 56%;">Omfattning / Grupp</th>
+                        <th style="width: 56%;">Omfattning / Projekt</th>
                         <th style="width: 15%;">A</th>
                         <th style="width: 15%;">mm²</th>
                       </tr>
@@ -283,6 +284,6 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
     const { uri } = await Print.printToFileAsync({ html: htmlContent });
     await Sharing.shareAsync(uri);
   } catch (e) {
-    console.error("PDF Error:", e);
+    await logError(e, { source: "mobile", feature: "pdf", model: "ProjectSchedulePdf" });
   }
 };

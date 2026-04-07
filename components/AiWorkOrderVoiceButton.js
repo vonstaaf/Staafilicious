@@ -35,6 +35,15 @@ function AiWorkOrderVoiceButtonInner({
   const confirmedRef = useRef("");
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  const onTranscriptRef = useRef(onTranscript);
+  const onSpeechEndRef = useRef(onSpeechEnd);
+  const onListeningChangeRef = useRef(onListeningChange);
+  useEffect(() => {
+    onTranscriptRef.current = onTranscript;
+    onSpeechEndRef.current = onSpeechEnd;
+    onListeningChangeRef.current = onListeningChange;
+  });
+
   useEffect(() => {
     try {
       const ok = ExpoSpeechRecognitionModule?.isRecognitionAvailable?.();
@@ -54,25 +63,25 @@ function AiWorkOrderVoiceButtonInner({
       const newConfirmed =
         confirmedRef.current + (confirmedRef.current ? " " : "") + transcript;
       confirmedRef.current = newConfirmed;
-      onTranscript?.(newConfirmed);
+      onTranscriptRef.current?.(newConfirmed);
     } else {
       const combined =
         confirmedRef.current + (confirmedRef.current ? " " : "") + transcript;
-      onTranscript?.(combined);
+      onTranscriptRef.current?.(combined);
     }
   });
 
   useSpeechRecognitionEvent("end", () => {
     const finalText = confirmedRef.current;
     setListening(false);
-    onListeningChange?.(false);
-    onSpeechEnd?.(finalText);
+    onListeningChangeRef.current?.(false);
+    onSpeechEndRef.current?.(finalText);
     confirmedRef.current = "";
   });
 
   useSpeechRecognitionEvent("error", (event) => {
     setListening(false);
-    onListeningChange?.(false);
+    onListeningChangeRef.current?.(false);
     confirmedRef.current = "";
     if (event?.error === "not-allowed") {
       Alert.alert("Mikrofon", "Aktivera mikrofon för röstinmatning.");
@@ -121,7 +130,7 @@ function AiWorkOrderVoiceButtonInner({
       }
       confirmedRef.current = "";
       setListening(true);
-      onListeningChange?.(true);
+      onListeningChangeRef.current?.(true);
       await ExpoSpeechRecognitionModule.start?.({
         lang: "sv-SE",
         interimResults: true,
@@ -143,7 +152,7 @@ function AiWorkOrderVoiceButtonInner({
       });
     } catch (e) {
       setListening(false);
-      onListeningChange?.(false);
+      onListeningChangeRef.current?.(false);
       Alert.alert(
         "Röst",
         e?.message?.includes("not available") || e?.code === "UNSUPPORTED"
@@ -151,7 +160,7 @@ function AiWorkOrderVoiceButtonInner({
           : (e?.message || "Kunde inte starta taligenkänning.")
       );
     }
-  }, [disabled, listening, available, onListeningChange]);
+  }, [disabled, listening, available]);
 
   const stopListening = useCallback(() => {
     if (!listening) return;

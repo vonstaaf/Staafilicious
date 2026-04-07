@@ -148,7 +148,7 @@ export default function ProtocolsHubScreen({ route, navigation }) {
         {isEl && (
           <>
             <ProtocolCard 
-              title="GRUPPSCHEMA" 
+              title="PROJEKTSCHEMA" 
               sub="Skapa förteckning" 
               icon="grid" 
               color={theme.colors.primary} 

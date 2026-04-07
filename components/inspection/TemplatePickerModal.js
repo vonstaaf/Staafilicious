@@ -22,7 +22,7 @@ export default function TemplatePickerModal({ visible, onSelectTemplate, onCance
             <Ionicons name="chevron-forward" size={20} color="#CCC" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.templatePickerBtn, { marginTop: 15 }]} onPress={() => onSelectTemplate("heating")}>
+          <TouchableOpacity style={[styles.templatePickerBtn, { marginTop: 12 }]} onPress={() => onSelectTemplate("heating")}>
             <View style={[styles.templateIcon, { backgroundColor: "#FF9500" }]}>
               <Ionicons name="flame" size={24} color="#FFF" />
             </View>
@@ -44,13 +44,23 @@ export default function TemplatePickerModal({ visible, onSelectTemplate, onCance
 
 const styles = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", padding: 25 },
-  namingCard: { backgroundColor: "#FFF", borderRadius: 30, padding: 30, elevation: 15 },
-  namingTitle: { fontSize: 20, fontWeight: "900", marginBottom: 25, textAlign: "center", color: "#1C1C1E" },
-  infoText: { fontSize: 13, color: "#8E8E93", textAlign: "center", marginBottom: 25, fontWeight: "600" },
-  templatePickerBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#F8F9FB", padding: 15, borderRadius: 18, borderWidth: 1, borderColor: "#EEE" },
+  namingCard: { backgroundColor: "#FFF", borderRadius: 30, padding: 24, elevation: 15 },
+  namingTitle: { fontSize: 20, fontWeight: "900", marginBottom: 16, textAlign: "center", color: "#1C1C1E" },
+  infoText: { fontSize: 13, color: "#8E8E93", textAlign: "center", marginBottom: 20, fontWeight: "600" },
+  templatePickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8F9FB",
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    minHeight: 88,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#EEE",
+  },
   templateIcon: { width: 45, height: 45, backgroundColor: WorkaholicTheme.colors.primary, borderRadius: 12, justifyContent: "center", alignItems: "center", marginRight: 15 },
   templateTitle: { fontSize: 15, fontWeight: "900", color: "#1C1C1E" },
   templateSub: { fontSize: 11, color: "#8E8E93", fontWeight: "600" },
-  cancelBtn: { marginTop: 30, padding: 10, alignItems: "center" },
-  cancelBtnText: { color: "#8E8E93", fontWeight: "800" },
+  cancelBtn: { marginTop: 24, paddingVertical: 14, paddingHorizontal: 20, alignItems: "center", minHeight: 48, justifyContent: "center" },
+  cancelBtnText: { color: "#8E8E93", fontWeight: "800", fontSize: 15 },
 });

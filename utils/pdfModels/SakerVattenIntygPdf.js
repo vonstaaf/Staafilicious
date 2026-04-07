@@ -2,12 +2,13 @@ import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getBase64Image } from "../imageHelpers";
+import { logError } from "../logger";
 
 const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
 
 /**
  * Genererar Säker Vatten-intyg som PDF från senaste Smart egenkontroll (och valfritt tryckprov).
- * Företagets logotyp hämtas från companyData.logoUrl eller AsyncStorage (@company_logo).
+ * Företagets logotyp hämtas från companyData.companyLogoUrl/logoUrl eller AsyncStorage (@company_logo).
  */
 export const handleSakerVattenIntygPdf = async (
   project,
@@ -24,7 +25,7 @@ export const handleSakerVattenIntygPdf = async (
 
     const appLogo = await getBase64Image(APP_LOGO_URL);
 
-    let logoToUse = company.logoUrl;
+    let logoToUse = company.companyLogoUrl || company.logoUrl;
     if (!logoToUse) {
       logoToUse = await AsyncStorage.getItem("@company_logo");
     }
@@ -173,7 +174,7 @@ export const handleSakerVattenIntygPdf = async (
     const { uri } = await Print.printToFileAsync({ html });
     await Sharing.shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf" });
   } catch (e) {
-    console.error("Säker Vatten-intyg PDF:", e);
+    await logError(e, { source: "mobile", feature: "pdf", model: "SakerVattenIntygPdf" });
     throw e;
   }
 };

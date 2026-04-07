@@ -4,44 +4,12 @@ import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../firebaseConfig";
 import { acceptInvitation } from "../services/invitationService";
+import { getLicenseState } from "../utils/subscriptionAccess";
 
 export const CompanyContext = createContext();
 
 function computeLicenseState(companyDoc) {
-  if (!companyDoc) return "unknown";
-  const { licenseValidUntil, isTrial, subscriptionStatus } = companyDoc;
-
-  let untilDate = null;
-  if (licenseValidUntil) {
-    if (typeof licenseValidUntil.toDate === "function") {
-      untilDate = licenseValidUntil.toDate();
-    } else if (typeof licenseValidUntil === "string") {
-      const parsed = new Date(licenseValidUntil);
-      if (!Number.isNaN(parsed.getTime())) untilDate = parsed;
-    }
-  }
-
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-
-  const isExpired = untilDate ? untilDate < now : false;
-
-  if (isExpired) {
-    return isTrial ? "trial_expired" : "expired";
-  }
-
-  // Om vi inte har datum men företaget finns, anta aktiv licens
-  if (isTrial) return "trial";
-
-  // Kan på sikt använda subscriptionStatus mer detaljerat här
-  if (subscriptionStatus && typeof subscriptionStatus === "string") {
-    const s = subscriptionStatus.toLowerCase();
-    if (s === "canceled" || s === "unpaid" || s === "past_due") {
-      return isExpired ? "expired" : "active";
-    }
-  }
-
-  return "active";
+  return getLicenseState(companyDoc);
 }
 
 /**

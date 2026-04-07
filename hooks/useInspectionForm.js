@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useContext } from "react";
 import { Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ScreenOrientation from "expo-screen-orientation";
@@ -7,19 +7,35 @@ import { auth, db } from "../firebaseConfig";
 import { capitalizeFirst } from "../utils/stringHelpers";
 import { rotateSignatureForPortrait } from "../utils/signatureHelpers";
 import { handleInspectionPdf } from "../utils/pdfActions";
+import { CompanyContext } from "../context/CompanyContext";
+import { getDefaultItemsForElTemplateType } from "../constants/elInspectionDefaults";
+
+/** Platt lista i checklist-ordning (bakåtkompatibilitet för PDF) */
+function flattenImagesByItemsOrder(itemList, byItem) {
+  const out = [];
+  for (const it of itemList || []) {
+    const arr = (byItem && byItem[it.id]) || [];
+    out.push(...arr);
+  }
+  return out;
+}
 
 /**
  * Hook för egenkontroll-formuläret. Hanterar state, persistence och signering.
  */
 export function useInspectionForm(project, routeParams, updateProject, templates, navigation) {
+  const { company: companyFromTenant } = useContext(CompanyContext) || {};
   const isSavingRef = useRef(false);
+  /** Undvik dubbel auto-öppning (t.ex. React Strict Mode) och spårar senaste projekt som fick picker. */
+  const templatePickerAutoOpenedForProjectId = useRef(null);
 
   const [items, setItems] = useState([]);
   const [checks, setChecks] = useState({});
   const [rowComments, setRowComments] = useState({});
   const [generalNotes, setGeneralNotes] = useState("");
   const [nameClarification, setNameClarification] = useState("");
-  const [images, setImages] = useState([]);
+  /** { [itemId: string]: string[] } — foton per checklistpunkt (EL Allmän/Golvvärme) */
+  const [imagesByItemId, setImagesByItemId] = useState({});
   const [editMode, setEditMode] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isSignModalVisible, setIsSignModalVisible] = useState(false);
@@ -39,30 +55,58 @@ export function useInspectionForm(project, routeParams, updateProject, templates
     return () => unsubscribe();
   }, []);
 
+  const migrateLegacyImagesToByItem = (legacyArr, itemList) => {
+    if (!Array.isArray(legacyArr) || legacyArr.length === 0 || !itemList?.length) return {};
+    return { [itemList[0].id]: [...legacyArr] };
+  };
+
   useEffect(() => {
     if (routeParams?.customTemplate) {
       setItems(routeParams.customTemplate);
       setInspectionSubtitle(routeParams.customTitle || "");
+      setIsTypeModalVisible(false);
     } else if (routeParams?.editMode && routeParams?.existingData) {
       const data = routeParams.existingData;
+      const itemList = data.items || [];
       setEditingHistoryId(data.id);
-      setItems(data.items || []);
+      setItems(itemList);
       setChecks(data.checks || {});
       setRowComments(data.rowComments || {});
       setGeneralNotes(data.notes || "");
       setNameClarification(data.signedBy || "");
-      setImages(data.images || []);
+      if (data.imagesByItem && typeof data.imagesByItem === "object" && !Array.isArray(data.imagesByItem)) {
+        setImagesByItemId(data.imagesByItem);
+      } else {
+        setImagesByItemId(migrateLegacyImagesToByItem(data.images, itemList));
+      }
       setInspectionSubtitle(data.description || "");
+      setIsTypeModalVisible(false);
     } else if (project) {
-      setItems(project.inspectionItems || []);
+      const rawItems = project.inspectionItems;
+      const itemList = Array.isArray(rawItems) ? rawItems : [];
+      setItems(itemList);
       setChecks(project.currentInspections || {});
       setRowComments(project.currentInspectionRowComments || {});
       setGeneralNotes(project.currentInspectionNotes || "");
       setNameClarification(project.nameClarification || "");
-      setImages(project.currentImages || []);
+      const byItem = project.currentImagesByItem;
+      if (byItem && typeof byItem === "object" && !Array.isArray(byItem)) {
+        setImagesByItemId(byItem);
+      } else {
+        setImagesByItemId(migrateLegacyImagesToByItem(project.currentImages, itemList));
+      }
 
-      const hasStarted = Object.keys(project.currentInspections || {}).length > 0;
-      if (!routeParams?.editMode && !hasStarted && !routeParams?.customTemplate) {
+      const hasTemplate = itemList.length > 0;
+      const hasChecks = Object.keys(project.currentInspections || {}).length > 0;
+      const shouldOfferPicker =
+        !routeParams?.editMode &&
+        !routeParams?.customTemplate &&
+        !hasTemplate &&
+        !hasChecks &&
+        project.id;
+
+      if (shouldOfferPicker && templatePickerAutoOpenedForProjectId.current !== project.id) {
+        templatePickerAutoOpenedForProjectId.current = project.id;
         setIsTypeModalVisible(true);
       }
     }
@@ -81,7 +125,8 @@ export function useInspectionForm(project, routeParams, updateProject, templates
           currentInspectionNotes: updatedFields.inspectionNotes ?? generalNotes,
           inspectionItems: updatedFields.inspectionItems ?? items,
           nameClarification: updatedFields.nameClarification ?? nameClarification,
-          currentImages: updatedFields.images ?? images,
+          currentImagesByItem: updatedFields.imagesByItemId ?? imagesByItemId,
+          currentImages: [],
           ...updatedFields,
         });
       } catch (err) {
@@ -98,7 +143,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
       generalNotes,
       items,
       nameClarification,
-      images,
+      imagesByItemId,
       isProcessing,
       editingHistoryId,
       updateProject,
@@ -107,13 +152,17 @@ export function useInspectionForm(project, routeParams, updateProject, templates
 
   const selectTemplate = useCallback(
     async (type) => {
-      const selectedItems = templates[type] || [];
+      let selectedItems = Array.isArray(templates[type]) && templates[type].length > 0 ? templates[type] : [];
+      if (!selectedItems.length) {
+        selectedItems = getDefaultItemsForElTemplateType(type);
+      }
       const title = type === "general" ? "Allmän kontroll" : "Golvvärme";
 
       setItems(selectedItems);
       setInspectionSubtitle(title);
       setIsTypeModalVisible(false);
       setCurrentIndex(0);
+      setImagesByItemId({});
 
       if (project?.id) {
         await updateProject(project.id, {
@@ -121,6 +170,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
           currentInspections: {},
           currentInspectionRowComments: {},
           currentInspectionNotes: "",
+          currentImagesByItem: {},
           currentImages: [],
           nameClarification: "",
         });
@@ -130,17 +180,32 @@ export function useInspectionForm(project, routeParams, updateProject, templates
   );
 
   const takePhoto = useCallback(async () => {
-    if (images.length >= 6) {
-      Alert.alert("Gräns nådd", "Max 6 bilder.");
+    const item = items[currentIndex];
+    if (!item) return;
+    const existing = imagesByItemId[item.id] || [];
+    if (existing.length >= 6) {
+      Alert.alert("Gräns nådd", "Max 6 bilder per punkt.");
       return;
     }
     const r = await ImagePicker.launchCameraAsync({ quality: 0.3 });
     if (!r.canceled) {
-      const n = [...images, r.assets[0].uri];
-      setImages(n);
-      persistData({ images: n });
+      const nextForItem = [...existing, r.assets[0].uri];
+      const nextMap = { ...imagesByItemId, [item.id]: nextForItem };
+      setImagesByItemId(nextMap);
+      persistData({ imagesByItemId: nextMap });
     }
-  }, [images, persistData]);
+  }, [items, currentIndex, imagesByItemId, persistData]);
+
+  const removePhotoForItem = useCallback(
+    (itemId, imageIndex) => {
+      const arr = [...(imagesByItemId[itemId] || [])];
+      arr.splice(imageIndex, 1);
+      const next = { ...imagesByItemId, [itemId]: arr };
+      setImagesByItemId(next);
+      persistData({ imagesByItemId: next });
+    },
+    [imagesByItemId, persistData]
+  );
 
   const isLastStep = currentIndex === items.length - 1;
 
@@ -180,7 +245,8 @@ export function useInspectionForm(project, routeParams, updateProject, templates
             checks,
             rowComments,
             notes: generalNotes,
-            images,
+            imagesByItem: imagesByItemId,
+            images: flattenImagesByItemsOrder(items, imagesByItemId),
             signature: fullSig,
             signedBy: nameClarification || "Installatör",
             items,
@@ -201,6 +267,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
                   currentInspections: {},
                   currentInspectionRowComments: {},
                   currentInspectionNotes: "",
+                  currentImagesByItem: {},
                   currentImages: [],
                   nameClarification: "",
                   inspectionItems: [],
@@ -210,10 +277,19 @@ export function useInspectionForm(project, routeParams, updateProject, templates
           setIsNameEntryModalVisible(false);
           navigation.goBack();
 
+          const mergedCompanyForPdf = {
+            ...companyData,
+            ...(companyFromTenant && {
+              companyName: companyFromTenant.companyName ?? companyData?.companyName,
+              companyLogoUrl: companyFromTenant.companyLogoUrl ?? companyData?.companyLogoUrl,
+              logoUrl: companyFromTenant.logoUrl ?? companyFromTenant.companyLogoUrl ?? companyData?.logoUrl,
+            }),
+          };
+
           setTimeout(() => {
             Alert.alert("Sparat!", "Egenkontrollen har arkiverats. Vill du skapa PDF nu?", [
               { text: "Nej", style: "cancel" },
-              { text: "Ja", onPress: () => handleInspectionPdf(project, entryData, companyData) },
+              { text: "Ja", onPress: () => handleInspectionPdf(project, entryData, mergedCompanyForPdf) },
             ]);
           }, 500);
         } catch (e) {
@@ -232,9 +308,10 @@ export function useInspectionForm(project, routeParams, updateProject, templates
       checks,
       rowComments,
       generalNotes,
-      images,
+      imagesByItemId,
       nameClarification,
       companyData,
+      companyFromTenant,
       updateProject,
       navigation,
     ]
@@ -287,7 +364,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
     setGeneralNotes,
     nameClarification,
     setNameClarification,
-    images,
+    imagesByItemId,
     editMode,
     setEditMode,
     currentIndex,
@@ -306,6 +383,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
     persistData,
     selectTemplate,
     takePhoto,
+    removePhotoForItem,
     setStatus,
     handleSignature,
     addNewSection,

@@ -40,7 +40,7 @@ const getUnitSymbol = (unit) => {
 };
 
 const InspectionStoryItem = React.memo(
-  ({ item, checks, setStatus, rowComments, setRowComments, images, takePhoto, persistData, onMeasurementBlur }) => {
+  ({ item, checks, setStatus, rowComments, setRowComments, images, takePhoto, onRemovePhoto, onMeasurementBlur }) => {
     const latestValueRef = React.useRef("");
     const handleCommentChange = (t) => {
       latestValueRef.current = t;
@@ -112,24 +112,24 @@ const InspectionStoryItem = React.memo(
         </View>
 
         <View style={styles.miniGallery}>
-          {images.map((uri, idx) => (
-            <TouchableOpacity
-              key={idx}
-              onPress={() => {
-                const n = images.filter((_, i) => i !== idx);
-                persistData({ images: n });
-              }}
-            >
-              <Image source={{ uri }} style={styles.miniThumb} />
-              <View style={styles.miniRemove}>
-                <Ionicons name="close" size={10} color="#fff" />
-              </View>
+          <Text style={styles.miniGalleryLabel}>Foton för denna punkt</Text>
+          <View style={styles.miniGalleryRow}>
+            {images.map((uri, idx) => (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => onRemovePhoto(idx)}
+              >
+                <Image source={{ uri }} style={styles.miniThumb} />
+                <View style={styles.miniRemove}>
+                  <Ionicons name="close" size={10} color="#fff" />
+                </View>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.miniAdd} onPress={takePhoto}>
+              <Ionicons name="camera" size={24} color="#CCC" />
+              <Text style={styles.miniAddText}>FOTO</Text>
             </TouchableOpacity>
-          ))}
-          <TouchableOpacity style={styles.miniAdd} onPress={takePhoto}>
-            <Ionicons name="camera" size={24} color="#CCC" />
-            <Text style={styles.miniAddText}>FOTO</Text>
-          </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     );
@@ -158,7 +158,8 @@ export default function InspectionScreen({ route, navigation }) {
     setGeneralNotes,
     nameClarification,
     setNameClarification,
-    images,
+    imagesByItemId,
+    removePhotoForItem,
     editMode,
     setEditMode,
     currentIndex,
@@ -253,9 +254,9 @@ export default function InspectionScreen({ route, navigation }) {
             setStatus={setStatus}
             rowComments={rowComments}
             setRowComments={setRowComments}
-            images={images}
+            images={imagesByItemId[currentItem.id] || []}
             takePhoto={takePhoto}
-            persistData={persistData}
+            onRemovePhoto={(idx) => removePhotoForItem(currentItem.id, idx)}
             onMeasurementBlur={onMeasurementBlur}
           />
         ) : (
@@ -325,7 +326,7 @@ export default function InspectionScreen({ route, navigation }) {
       <TemplatePickerModal
         visible={isTypeModalVisible}
         onSelectTemplate={selectTemplate}
-        onCancel={() => navigation.goBack()}
+        onCancel={() => setIsTypeModalVisible(false)}
       />
 
       <NameEntryModal
@@ -415,7 +416,9 @@ const styles = StyleSheet.create({
   inputWrapper: { position: "relative" },
   unitBadge: { position: "absolute", right: 15, top: 15, backgroundColor: "#E5E5EA", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   unitBadgeText: { fontSize: 12, fontWeight: "900", color: "#8E8E93" },
-  miniGallery: { flexDirection: "row", marginTop: 30, gap: 12, flexWrap: "wrap", justifyContent: "center" },
+  miniGallery: { marginTop: 24 },
+  miniGalleryLabel: { fontSize: 11, fontWeight: "800", color: "#888", marginBottom: 10, textAlign: "center" },
+  miniGalleryRow: { flexDirection: "row", gap: 12, flexWrap: "wrap", justifyContent: "center" },
   miniThumb: { width: 70, height: 70, borderRadius: 15 },
   miniAdd: {
     width: 70,

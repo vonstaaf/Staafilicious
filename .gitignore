@@ -44,6 +44,7 @@ yarn-error.*
 google-services.json
 
 # Credentials och secrets
+**/*-firebase-adminsdk-*.json
 credentials.json
 serviceAccountKey.json
 **/serviceAccountKey.json
@@ -51,3 +52,6 @@ Sensitive Keystore information.txt
 .env.local
 
 .env.local
+
+# Nested webbkopia (använd separat repo workaholic-web)
+/workaholic-web/

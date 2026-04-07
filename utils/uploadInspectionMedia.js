@@ -1,5 +1,7 @@
 import { auth, storage } from "../firebaseConfig";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { workaholicApiUrl } from "../constants/workaholicApi";
+import { logError } from "./logger";
 
 /**
  * Laddar upp en egenkontrollbild till Firebase Storage under projektet.
@@ -21,6 +23,33 @@ export async function uploadInspectionPhoto(companyId, groupId, localUri, itemId
   const storageRef = ref(storage, `companies/${companyId}/groups/${groupId}/inspection_media/${filename}`);
   await uploadBytes(storageRef, blob);
   const url = await getDownloadURL(storageRef);
+
+  // Realtidssynk till Google Drive (best-effort, blockar inte huvudflödet).
+  try {
+    const token = await auth.currentUser.getIdToken();
+    await fetch(workaholicApiUrl("/api/integrations/google/sync-image"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        companyId,
+        projectId: groupId,
+        imageUrl: url,
+        fileName: filename,
+      }),
+    });
+  } catch (syncError) {
+    await logError(syncError, {
+      source: "mobile",
+      feature: "drive-sync",
+      action: "uploadInspectionPhoto",
+      companyId,
+      projectId: groupId,
+    });
+  }
+
   return {
     url,
     ...(coords?.latitude != null && { latitude: coords.latitude }),

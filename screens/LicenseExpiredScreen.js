@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Linking } from "react-native";
-import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { WORKAHOLIC_API_BASE } from "../constants/workaholicApi";
 import { Ionicons } from "@expo/vector-icons";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebaseConfig";
@@ -9,11 +9,7 @@ import { useTheme } from "../context/ThemeContext";
 import { WorkaholicTheme } from "../theme";
 import { useCompanyLicense } from "../hooks/useCompanyLicense";
 
-const WEB_URL =
-  (Constants.expoConfig &&
-    Constants.expoConfig.extra &&
-    Constants.expoConfig.extra.webUrl) ||
-  "https://workaholic-web.vercel.app";
+const WEB_URL = WORKAHOLIC_API_BASE;
 
 export default function LicenseExpiredScreen() {
   const insets = useSafeAreaInsets();
@@ -26,7 +22,7 @@ export default function LicenseExpiredScreen() {
   };
 
   const openWebPricing = () => {
-    Linking.openURL(`${WEB_URL}/#pricing`);
+    Linking.openURL(`${WEB_URL}/foretag/licenser`);
   };
 
   const openMinaSidor = () => {
@@ -56,7 +52,7 @@ export default function LicenseExpiredScreen() {
         </Text>
         <TouchableOpacity style={styles.webLinkBtn} onPress={openWebPricing}>
           <Ionicons name="open-outline" size={16} color={theme.colors.primary} />
-          <Text style={styles.webLinkText}>Öppna Workaholic på webben</Text>
+          <Text style={styles.webLinkText}>Lås upp Workaholic</Text>
         </TouchableOpacity>
         {!isTrialExpired && (
           <TouchableOpacity style={[styles.webLinkBtn, { marginTop: 8 }]} onPress={openMinaSidor}>

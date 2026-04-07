@@ -17,7 +17,7 @@ import AppHeader from "../components/AppHeader";
 // 🔑 NY INTERN KOMPONENT: HEADER-INFO (Fixar fokus-bugg i toppen)
 const ScheduleHeader = React.memo(({ 
   headerInfo, setHeaderInfo, pageSize, setPageSize, 
-  resetSchedule, moduleCount, adjustRowsCount, 
+  resetSchedule, moduleCountInput, setModuleCountInput, commitModuleRowCount, 
   showJfbText, setShowJfbText 
 }) => {
   return (
@@ -111,12 +111,18 @@ const ScheduleHeader = React.memo(({
             <TextInput 
               style={styles.modInput} 
               keyboardType="number-pad" 
-              value={moduleCount} 
-              onChangeText={adjustRowsCount} 
+              value={moduleCountInput} 
+              onChangeText={(t) => setModuleCountInput(t.replace(/[^0-9]/g, ""))}
+              onEndEditing={commitModuleRowCount}
+              onBlur={commitModuleRowCount}
             />
             <Text style={styles.modLabel}>RADER</Text>
         </View>
       </View>
+
+      <Text style={styles.moduleHint}>
+        Välj antal moduler innan du börjar skriva. Ökar du antalet behålls tidigare rader; minskar du tas bara överskjutande bort.
+      </Text>
 
       <View style={styles.switchRow}>
         <Text style={styles.switchLabel}>Visa text om Jordfelsbrytare på PDF</Text>
@@ -191,7 +197,7 @@ export default function GroupScheduleScreen({ navigation }) {
   });
   const [showJfbText, setShowJfbText] = useState(false);
   const [pageSize, setPageSize] = useState("A4");
-  const [moduleCount, setModuleCount] = useState("12");
+  const [moduleCountInput, setModuleCountInput] = useState("12");
   const [rows, setRows] = useState([]);
   
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -220,7 +226,7 @@ export default function GroupScheduleScreen({ navigation }) {
       });
       setShowJfbText(selectedProject.groupScheduleHeader.showJfbText || false);
       setRows(selectedProject.groupScheduleRows || []);
-      setModuleCount(String(selectedProject.groupScheduleRows?.length || "12"));
+      setModuleCountInput(String(selectedProject.groupScheduleRows?.length || "12"));
     } else if (selectedProject?.groupSchedule) {
       const gs = selectedProject.groupSchedule;
       setHeaderInfo({
@@ -233,7 +239,7 @@ export default function GroupScheduleScreen({ navigation }) {
       });
       setShowJfbText(gs.headerInfo?.showJfbText || false);
       setPageSize(gs.pageSize || "A4");
-      setModuleCount(String(gs.moduleCount || "12"));
+      setModuleCountInput(String(gs.moduleCount || gs.rows?.length || "12"));
       setRows(gs.rows || []);
     } else {
       setHeaderInfo(s => ({ ...s, anlaggning: selectedProject?.name || "" }));
@@ -248,26 +254,33 @@ export default function GroupScheduleScreen({ navigation }) {
     Alert.alert("Rensa schema?", "Vill du tömma hela schemat?", [
       { text: "Avbryt", style: "cancel" },
       { text: "Ja, rensa", style: "destructive", onPress: () => {
-          setModuleCount("12");
+          setModuleCountInput("12");
           setRows(Array.from({ length: 12 }, (_, i) => ({ id: (i + 1).toString(), label: "", current: "", area: "" })));
       }}
     ]);
-  }, [rows]);
+  }, []);
 
-  const adjustRowsCount = useCallback((newCountStr) => {
-    const num = parseInt(newCountStr) || 0;
-    setModuleCount(newCountStr);
-    if (num === rows.length) return;
-    if (num < rows.length) {
-      setRows(rows.slice(0, num));
-    } else {
-      const diff = num - rows.length;
-      const newRows = Array.from({ length: diff }, (_, i) => ({
-        id: (rows.length + i + 1).toString(), label: "", current: "", area: ""
-      }));
-      setRows([...rows, ...newRows]);
+  const commitModuleRowCount = useCallback(() => {
+    const n = parseInt(moduleCountInput.trim(), 10);
+    if (!Number.isFinite(n) || n < 1) {
+      setModuleCountInput(String(Math.max(1, rows.length)));
+      return;
     }
-  }, [rows]);
+    const capped = Math.min(200, n);
+    setModuleCountInput(String(capped));
+    setRows((prev) => {
+      if (capped === prev.length) return prev;
+      if (capped < prev.length) return prev.slice(0, capped);
+      const diff = capped - prev.length;
+      const extra = Array.from({ length: diff }, (_, i) => ({
+        id: (prev.length + i + 1).toString(),
+        label: "",
+        current: "",
+        area: "",
+      }));
+      return [...prev, ...extra];
+    });
+  }, [moduleCountInput, rows.length]);
 
   const openPicker = useCallback((rowId, type) => { 
     setActivePicker({ rowId, type }); 
@@ -307,7 +320,7 @@ export default function GroupScheduleScreen({ navigation }) {
         groupScheduleHeader: { ...headerInfo, showJfbText },
         groupSchedule: { 
           headerInfo: { ...headerInfo, showJfbText }, 
-          pageSize, moduleCount: parseInt(moduleCount), rows, updatedAt: new Date().toISOString() 
+          pageSize, moduleCount: rows.length, rows, updatedAt: new Date().toISOString() 
         } 
       });
       if (!silent) Alert.alert("Sparat!");
@@ -357,8 +370,9 @@ export default function GroupScheduleScreen({ navigation }) {
               pageSize={pageSize}
               setPageSize={setPageSize}
               resetSchedule={resetSchedule}
-              moduleCount={moduleCount}
-              adjustRowsCount={adjustRowsCount}
+              moduleCountInput={moduleCountInput}
+              setModuleCountInput={setModuleCountInput}
+              commitModuleRowCount={commitModuleRowCount}
               showJfbText={showJfbText}
               setShowJfbText={setShowJfbText}
             />
@@ -423,6 +437,7 @@ const styles = StyleSheet.create({
   modLabel: { fontSize: 8, fontWeight: '900', color: '#CCC', textAlign: 'center', marginTop: 2 },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#F5F5F7' },
   switchLabel: { fontSize: 12, fontWeight: '700', color: '#666', flex: 1 },
+  moduleHint: { fontSize: 11, fontWeight: '600', color: '#888', marginTop: 12, lineHeight: 16 },
 
   rowCard: { flexDirection: "row", marginHorizontal: 20, marginBottom: 10, borderRadius: 20, padding: 12, alignItems: "center", backgroundColor: '#FFF', elevation: 2, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 5 },
   numBadge: { width: 30, height: 30, borderRadius: 10, backgroundColor: '#F0F7FF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useContext } from "react";
+import React, { useState, useCallback, useContext, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,11 +16,14 @@ import { auth, db } from "../firebaseConfig";
 import { doc, getDoc } from "firebase/firestore";
 import AppHeader from "../components/AppHeader";
 import AiWorkOrderVoiceButton from "../components/AiWorkOrderVoiceButton";
+import AiWorkOrderErrorBoundary from "../components/AiWorkOrderErrorBoundary";
 import { useTheme, useProfession } from "../context/ThemeContext";
 import { CompanyContext } from "../context/CompanyContext";
 import { useProjects } from "../context/ProjectsContext";
 import { workaholicApiUrl } from "../constants/workaholicApi";
 import { capitalizeFirst } from "../utils/stringHelpers";
+import { parseAiWorkOrderPayload } from "../utils/aiWorkOrderParse";
+import { logError } from "../utils/logger";
 
 function getTodayDateSv() {
   return new Date().toLocaleDateString("sv-SE");
@@ -134,6 +137,21 @@ function buildProductRowFromAi(m, materialMarkupPercent) {
   };
 }
 
+/** Läser HTTP-svar som JSON; korrupt body kastar kontrollerat (fångas i analyze). */
+async function safeReadResponseJson(res) {
+  const text = await res.text();
+  if (!text || !text.trim()) {
+    return {};
+  }
+  try {
+    return JSON.parse(text);
+  } catch (parseErr) {
+    const err = new Error("Kunde inte tolka serverns svar (ogiltig JSON).");
+    err.cause = parseErr;
+    throw err;
+  }
+}
+
 export default function AiWorkOrderScreen({ navigation, route }) {
   const theme = useTheme();
   const profession = useProfession();
@@ -145,71 +163,125 @@ export default function AiWorkOrderScreen({ navigation, route }) {
     selectedProject?.id === routeProject?.id ? selectedProject : routeProject;
 
   const [rawText, setRawText] = useState("");
+  const rawTextRef = useRef("");
+  /** Endast ref-synk — ingen AI/anrop här, så setResult från analys kan inte starta en ny loop. */
+  useEffect(() => {
+    rawTextRef.current = rawText;
+  }, [rawText]);
+
   const [analyzeBusy, setAnalyzeBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
-  const analyze = useCallback(async (overrideText) => {
-    const text = (overrideText ?? rawText).trim();
-    if (!text) {
-      Alert.alert("Tom text", "Skriv en kort beskrivning av arbetet först.");
-      return;
-    }
-    const user = auth.currentUser;
-    if (!user) {
-      setError("Du måste vara inloggad för att använda AI-analys.");
-      return;
-    }
-    setAnalyzeBusy(true);
-    setError(null);
-    setResult(null);
-    try {
-      const idToken = await user.getIdToken(true);
-      const res = await fetch(workaholicApiUrl("/api/ai/work-order"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          text,
-          ...(profession ? { profession } : {}),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg =
-          res.status === 401
-            ? "Sessionen har gått ut. Logga ut och in igen."
-            : data.error || data.details || `HTTP ${res.status}`;
-        throw new Error(msg);
-      }
-      if (!data.ok) {
-        throw new Error(data.error || "Okänt svar från servern");
-      }
-      setResult({
-        timeReported: data.timeReported,
-        materials: Array.isArray(data.materials) ? data.materials : [],
-        notes: data.notes || "",
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-    } finally {
-      setAnalyzeBusy(false);
-    }
-  }, [rawText, profession]);
+  const analyzeSeqRef = useRef(0);
+  /** Synkron spärr mot dubbeltryck innan React hunnit sätta analyzeBusy. */
+  const analyzeInFlightRef = useRef(false);
 
-  const handleSpeechEnd = useCallback(
-    (finalText) => {
-      if (finalText?.trim()) {
-        setRawText(finalText.trim());
-        analyze(finalText.trim());
+  const analyze = useCallback(
+    async (overrideText) => {
+      const text = (overrideText ?? rawTextRef.current).trim();
+      if (!text) {
+        Alert.alert("Tom text", "Skriv en kort beskrivning av arbetet först.");
+        return;
+      }
+      const user = auth.currentUser;
+      if (!user) {
+        setError("Du måste vara inloggad för att använda AI-analys.");
+        return;
+      }
+
+      if (analyzeInFlightRef.current) {
+        return;
+      }
+      analyzeInFlightRef.current = true;
+
+      const seq = ++analyzeSeqRef.current;
+      setAnalyzeBusy(true);
+      setError(null);
+      setResult(null);
+
+      try {
+        const idToken = await user.getIdToken(true);
+        const res = await fetch(workaholicApiUrl("/api/ai/work-order"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            text,
+            ...(profession ? { profession } : {}),
+          }),
+        });
+
+        const data = await safeReadResponseJson(res);
+
+        if (seq !== analyzeSeqRef.current) {
+          return;
+        }
+
+        if (!res.ok) {
+          const msg =
+            res.status === 401
+              ? "Sessionen har gått ut. Logga ut och in igen."
+              : data.error || data.details || `HTTP ${res.status}`;
+          throw new Error(msg);
+        }
+        if (!data.ok) {
+          throw new Error(data.error || "Okänt svar från servern");
+        }
+
+        let parsed;
+        try {
+          parsed = parseAiWorkOrderPayload(data);
+        } catch (parseErr) {
+          await logError(parseErr, {
+            screen: "AiWorkOrderScreen",
+            action: "parse_ai_response",
+            payloadKeys: data && typeof data === "object" ? Object.keys(data) : [],
+          });
+          throw new Error(
+            "Vi kunde inte tolka AI-svaret. Försök igen eller skriv om texten."
+          );
+        }
+
+        setResult({
+          timeReported: parsed.timeReported,
+          materials: parsed.materials,
+          notes: parsed.notes,
+        });
+      } catch (e) {
+        if (seq !== analyzeSeqRef.current) {
+          return;
+        }
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        await logError(e instanceof Error ? e : new Error(String(e)), {
+          screen: "AiWorkOrderScreen",
+          action: "analyze",
+        });
+      } finally {
+        analyzeInFlightRef.current = false;
+        if (seq === analyzeSeqRef.current) {
+          setAnalyzeBusy(false);
+        }
       }
     },
-    [analyze]
+    [profession]
   );
+
+  const analyzeRef = useRef(analyze);
+  analyzeRef.current = analyze;
+
+  const handleSpeechEnd = useCallback((finalText) => {
+    if (finalText?.trim()) {
+      const t = finalText.trim();
+      setRawText(t);
+      rawTextRef.current = t;
+      analyzeRef.current(t);
+    }
+  }, []);
 
   const saveToProject = useCallback(async () => {
     if (!project?.id || !result) return;
@@ -292,6 +364,10 @@ export default function AiWorkOrderScreen({ navigation, route }) {
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      await logError(e instanceof Error ? e : new Error(String(e)), {
+        screen: "AiWorkOrderScreen",
+        action: "save_to_project",
+      });
       Alert.alert(
         "Kunde inte spara",
         `${msg}\n\nFörsök igen om en stund.`,
@@ -339,14 +415,21 @@ export default function AiWorkOrderScreen({ navigation, route }) {
           navigation={navigation}
         />
 
+        <AiWorkOrderErrorBoundary
+          onRetry={() => {
+            setError(null);
+            setResult(null);
+          }}
+        >
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
           <Text style={styles.hint}>
-            Beskriv vad du gjort i fritext — vi tolkar tid och material. Tryck
-            på mikrofonen för att prata in.
+            Beskriv vad du gjort i fritext — vi tolkar tid och material för detta{" "}
+            <Text style={{ fontWeight: "800" }}>projekt</Text>. Tryck på
+            mikrofonen för att prata in.
           </Text>
 
           <View style={styles.inputRow}>
@@ -372,7 +455,7 @@ export default function AiWorkOrderScreen({ navigation, route }) {
 
           <TouchableOpacity
             style={[styles.analyzeBtn, { backgroundColor: primary }]}
-            onPress={analyze}
+            onPress={() => analyze()}
             disabled={busy}
             activeOpacity={0.85}
           >
@@ -434,7 +517,8 @@ export default function AiWorkOrderScreen({ navigation, route }) {
               ) : null}
 
               <Text style={styles.saveHint}>
-                Sparat hamnar i kostnadsloggen (tid) och materiallistan (artiklar).
+                Sparat hamnar i kostnadsloggen (tid) och materiallistan (artiklar) för
+                projektet.
               </Text>
 
               <TouchableOpacity
@@ -463,6 +547,22 @@ export default function AiWorkOrderScreen({ navigation, route }) {
             </View>
           ) : null}
         </ScrollView>
+        </AiWorkOrderErrorBoundary>
+
+        {analyzeBusy ? (
+          <View
+            style={styles.aiBlockingOverlay}
+            pointerEvents="auto"
+            accessibilityViewIsModal
+            accessibilityLabel="Analyserar med AI"
+          >
+            <View style={styles.aiOverlayCard}>
+              <ActivityIndicator size="large" color="#FFF" />
+              <Text style={styles.aiOverlayTitle}>Analyserar med AI</Text>
+              <Text style={styles.aiOverlayHint}>Vänta lite…</Text>
+            </View>
+          </View>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -477,6 +577,36 @@ const styles = StyleSheet.create({
     color: "#636366",
     lineHeight: 20,
     marginBottom: 14,
+  },
+  aiBlockingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1000,
+    elevation: 24,
+  },
+  aiOverlayCard: {
+    backgroundColor: "rgba(28,28,30,0.95)",
+    paddingVertical: 28,
+    paddingHorizontal: 32,
+    borderRadius: 18,
+    alignItems: "center",
+    minWidth: 260,
+    maxWidth: "88%",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  aiOverlayTitle: {
+    marginTop: 16,
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#FFF",
+  },
+  aiOverlayHint: {
+    marginTop: 6,
+    fontSize: 14,
+    color: "rgba(255,255,255,0.75)",
   },
   inputRow: {
     flexDirection: "row",

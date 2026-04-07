@@ -321,8 +321,10 @@ export default function ProductsScreen({ navigation, route }) {
   };
 
   const saveProduct = async () => {
-    if (!newRow.name.trim()) {
-      Alert.alert("Väntar", "Du måste skriva en benämning.");
+    const nameTrim = newRow.name.trim();
+    const artTrim = newRow.articleNumber.trim();
+    if (!nameTrim && !artTrim) {
+      Alert.alert("Väntar", "Ange minst benämning eller art.nr / E-nummer.");
       return;
     }
 
@@ -331,8 +333,8 @@ export default function ProductsScreen({ navigation, route }) {
     const q = parseFloat(newRow.quantity) || 1;
 
     const newItem = {
-      name: newRow.name.trim(),
-      articleNumber: newRow.articleNumber.trim() || "-",
+      name: nameTrim || artTrim,
+      articleNumber: artTrim || "-",
       purchasePrice: p,
       markup: m,
       quantity: q,
