@@ -12,7 +12,6 @@ import {
   Image,
 } from "react-native";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from "expo-image-picker";
 import Constants from 'expo-constants'; // 👈 Tillagd för automatisk version
 import { WorkaholicTheme, getThemeForProfession } from "../theme";
 import { mergeTheme } from "../context/ThemeContext";
@@ -22,10 +21,12 @@ import { updatePassword, updateProfile, signOut } from "firebase/auth";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
-import { useBadges } from "../context/BadgeContext";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CompanyContext } from "../context/CompanyContext";
 import AppHeader from "../components/AppHeader";
-import { formatProjectName } from "../utils/stringHelpers";
+import { getCompanyInitials } from "../utils/stringHelpers";
+
+// Backward compatibility guard for older cached bundles referencing ROLES.
+const ROLES = Object.freeze({});
 
 function profileRoleToProfessionKeys(role) {
   if (role === "El") return ["el"];
@@ -37,7 +38,7 @@ function profileRoleToProfessionKeys(role) {
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { projects } = useContext(ProjectsContext);
-  const { currentLogo, setCurrentLogo } = useBadges();
+  const { company } = useContext(CompanyContext) || {};
   const user = auth.currentUser;
 
   const [email] = useState(user?.email || "");
@@ -45,19 +46,33 @@ export default function ProfileScreen({ navigation }) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [profession, setProfession] = useState("El"); 
-  const [companyName, setCompanyName] = useState("");
-  const [orgNr, setOrgNr] = useState("");
+  const [profession, setProfession] = useState("El");
   const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
-  const [zipCity, setZipCity] = useState("");
-  const [website, setWebsite] = useState("");
   const [loading, setLoading] = useState(false);
 
   const profileAccentTheme = useMemo(
     () => mergeTheme(WorkaholicTheme, getThemeForProfession(profileRoleToProfessionKeys(profession))),
     [profession]
   );
+  const companyLogoUrl = company?.companyLogoUrl || company?.logoUrl || null;
+  const companyNameDisplay = company?.companyName || company?.name || "Företag";
+
+  const roleAvatar = useMemo(() => {
+    const p = String(profession || "").toLowerCase();
+    if (p.includes("el")) {
+      return { icon: "flash", label: "Elektriker", bg: "#2563EB" };
+    }
+    if (p.includes("projekt")) {
+      return { icon: "construct", label: "Projektledare", bg: "#7C3AED" };
+    }
+    if (p.includes("bygg")) {
+      return { icon: "hammer", label: "Bygg", bg: "#EA580C" };
+    }
+    if (p.includes("rör") || p.includes("vvs")) {
+      return { icon: "water", label: "VVS", bg: "#0891B2" };
+    }
+    return { icon: "person", label: "Användare", bg: "#64748B" };
+  }, [profession]);
 
   useEffect(() => {
     fetchUserData();
@@ -76,41 +91,14 @@ export default function ProfileScreen({ navigation }) {
         else if (pLower.includes("Bygg") || pLower.includes("bygg")) setProfession("Bygg");
         else if (pLower.includes("rör") || pLower.includes("vvs")) setProfession("Rör");
         else setProfession(fetchedProf);
-        setCompanyName(formatProjectName(d.companyName || ""));
-        setOrgNr(d.orgNr || "");
         setPhone(d.phone || "");
-        setAddress(d.address || "");
-        setZipCity(d.zipCity || "");
-        setWebsite(d.website || "");
-        if (d.logoUrl) {
-          setCurrentLogo(d.logoUrl);
-          await AsyncStorage.setItem('@company_logo', d.logoUrl);
-        }
       }
     } catch (e) { console.log("Kunde inte hämta data", e); }
-  };
-
-  const pickLogo = async () => {
-    try {
-      let r = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.5,
-      });
-      if (!r.canceled) {
-        const uri = r.assets[0].uri;
-        setCurrentLogo(uri);
-        await AsyncStorage.setItem('@company_logo', uri);
-        await updateDoc(doc(db, "users", user.uid), { logoUrl: uri });
-      }
-    } catch (e) { Alert.alert("Fel", "Kunde inte välja bild."); }
   };
 
   const handleSave = async () => {
     setLoading(true);
     try {
-      const normalizedCompanyName = formatProjectName(companyName);
       if (user && displayName !== user.displayName) await updateProfile(user, { displayName });
       if (newPassword && newPassword === confirmPassword) {
         await updatePassword(user, newPassword);
@@ -121,11 +109,10 @@ export default function ProfileScreen({ navigation }) {
         setLoading(false); return;
       }
       await updateDoc(doc(db, "users", user.uid), {
-        profession: profession, 
-        companyName: normalizedCompanyName, orgNr, phone, address, zipCity, website
+        displayName: displayName.trim(),
+        phone: phone.trim(),
       });
-      setCompanyName(normalizedCompanyName);
-      Alert.alert("Sparat", "Din profil och yrkesroll har uppdaterats.");
+      Alert.alert("Sparat", "Din profil har uppdaterats.");
     } catch (e) { Alert.alert("Fel", "Kunde inte spara profil."); }
     finally { setLoading(false); }
   };
@@ -136,8 +123,6 @@ export default function ProfileScreen({ navigation }) {
       { text: "Logga ut", style: "destructive", onPress: () => signOut(auth) }
     ]);
   };
-
-  const ROLES = ['El', 'Bygg', 'Rör'];
 
   return (
     <View style={{ flex: 1, backgroundColor: "#F8F9FB" }}>
@@ -159,18 +144,32 @@ export default function ProfileScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <TouchableOpacity onPress={pickLogo} style={styles.logoWrapper}>
-              {currentLogo ? (
-                <Image source={{ uri: currentLogo }} style={styles.logo} />
+            <View style={[styles.roleAvatar, { backgroundColor: roleAvatar.bg }]}>
+              <Ionicons name={roleAvatar.icon} size={34} color="#FFF" />
+            </View>
+            <View style={styles.companyBrandCard}>
+              {companyLogoUrl ? (
+                <View style={styles.companyLogoWrap}>
+                  <Text style={styles.companyLogoHint}>Företagslogotyp</Text>
+                  <View style={styles.companyLogoBox}>
+                    <Image source={{ uri: companyLogoUrl }} style={styles.companyLogoImage} resizeMode="contain" />
+                  </View>
+                </View>
               ) : (
-                <View style={styles.placeholderLogo}><Ionicons name="camera" size={30} color="#BBB" /></View>
+                <View style={styles.companyInitialsCircle}>
+                  <Text style={styles.companyInitialsText}>
+                    {getCompanyInitials(companyNameDisplay)}
+                  </Text>
+                </View>
               )}
-              <View style={[styles.editBadge, { backgroundColor: profileAccentTheme.colors.primary }]}>
-                <Ionicons name="pencil" size={12} color="#FFF" />
+              <View style={styles.companyMeta}>
+                <Text style={styles.companyMetaTitle} numberOfLines={1}>{companyNameDisplay}</Text>
+                <Text style={styles.companyMetaSub}>Företagslogotyp hanteras i webbportalen</Text>
               </View>
-            </TouchableOpacity>
+            </View>
             <Text style={styles.userName}>{displayName || "Användare"}</Text>
             <Text style={styles.userEmail}>{email}</Text>
+            <Text style={styles.userRolePill}>{roleAvatar.label}</Text>
           </View>
 
           <View style={styles.statsRow}>
@@ -198,80 +197,40 @@ export default function ProfileScreen({ navigation }) {
                 <Ionicons name="options-outline" size={22} color={profileAccentTheme.colors.primary} />
               </View>
               <View style={{flex: 1, marginLeft: 12}}>
-                <Text style={styles.settingsLabel}>Grossist-kopplingar & Logo</Text>
-                <Text style={styles.settingsSub}>Hantera Rexel, Solar, Ahlsell m.m.</Text>
+                <Text style={styles.settingsLabel}>Appinställningar</Text>
+                <Text style={styles.settingsSub}>Notiser, mallar och profilinställningar</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#CCC" />
             </TouchableOpacity>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>YRKESROLL</Text>
-            <View style={styles.professionRow}>
-              {ROLES.map(role => {
-                const isActive = profession === role;
-                return (
-                  <TouchableOpacity 
-                    key={role} 
-                    style={[
-                      styles.profBtn,
-                      isActive && {
-                        backgroundColor: profileAccentTheme.colors.primary,
-                        borderColor: profileAccentTheme.colors.primary,
-                      },
-                    ]}
-                    onPress={() => setProfession(role)}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons 
-                      name={role === 'El' ? 'flash' : role === 'Bygg' ? 'hammer' : 'water'} 
-                      size={20} 
-                      color={isActive ? '#FFF' : '#CCC'} 
-                    />
-                    <Text style={[styles.profText, isActive && { color: '#FFF' }]}>{role}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>FÖRETAGSUPPGIFTER</Text>
+            <Text style={styles.sectionTitle}>PROFIL</Text>
             <View style={{ gap: 15 }}>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="business" size={20} color="#CCC" />
-                <TextInput style={styles.input} placeholder="Företagsnamn" value={companyName} onChangeText={setCompanyName} />
+              <View style={styles.readOnlyField}>
+                <Ionicons name="business" size={20} color="#94A3B8" />
+                <Text style={styles.readOnlyText} numberOfLines={1}>{companyNameDisplay}</Text>
               </View>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="card" size={20} color="#CCC" />
-                <TextInput style={styles.input} placeholder="Org.nr" value={orgNr} onChangeText={setOrgNr} keyboardType="numeric" />
-              </View>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="call" size={20} color="#CCC" />
-                <TextInput style={styles.input} placeholder="Telefon" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-              </View>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="map" size={20} color="#CCC" />
-                <TextInput style={styles.input} placeholder="Gatuadress" value={address} onChangeText={setAddress} />
-              </View>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="location" size={20} color="#CCC" />
-                <TextInput style={styles.input} placeholder="Postnr & Ort" value={zipCity} onChangeText={setZipCity} />
-              </View>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="globe" size={20} color="#CCC" />
-                <TextInput style={styles.input} placeholder="Hemsida" value={website} onChangeText={setWebsite} autoCapitalize="none" />
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>KONTO</Text>
-            <View style={{ gap: 15 }}>
               <View style={styles.inputWrapper}>
                 <Ionicons name="person" size={20} color="#CCC" />
                 <TextInput style={styles.input} placeholder="Visningsnamn" value={displayName} onChangeText={setDisplayName} />
               </View>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="call" size={20} color="#CCC" />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Telefon"
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>KONTO & SÄKERHET</Text>
+            <View style={{ gap: 15 }}>
               <View style={styles.inputWrapper}>
                 <Ionicons name="lock-closed" size={20} color="#CCC" />
                 <TextInput style={styles.input} placeholder="Nytt lösenord" value={newPassword} onChangeText={setNewPassword} secureTextEntry={!showPassword} />
@@ -312,21 +271,81 @@ export default function ProfileScreen({ navigation }) {
 // ... Styles är oförändrade ...
 const styles = StyleSheet.create({
   header: { alignItems: "center", marginBottom: 20 },
-  logoWrapper: { marginBottom: 15 },
-  logo: { width: 100, height: 100, borderRadius: 50, borderWidth: 3, borderColor: "#FFF" },
-  placeholderLogo: { width: 100, height: 100, borderRadius: 50, backgroundColor: "#E1E1E1", justifyContent: 'center', alignItems: 'center' },
-  editBadge: { position: 'absolute', bottom: 0, right: 0, borderRadius: 15, width: 30, height: 30, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FFF' },
+  roleAvatar: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 14,
+    borderWidth: 3,
+    borderColor: "#FFF",
+  },
+  companyBrandCard: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  companyLogoWrap: { alignItems: "center", marginRight: 10 },
+  companyLogoHint: { fontSize: 9, color: "#6B7280", fontWeight: "700", marginBottom: 4, textTransform: "uppercase" },
+  companyLogoBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    backgroundColor: "#F8FAFC",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  companyLogoImage: { width: 44, height: 44 },
+  companyInitialsCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#0EA5E9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  companyInitialsText: { color: "#FFF", fontWeight: "800", fontSize: 16 },
+  companyMeta: { flex: 1, minWidth: 0 },
+  companyMetaTitle: { fontSize: 14, fontWeight: "800", color: "#0F172A" },
+  companyMetaSub: { fontSize: 11, color: "#6B7280", marginTop: 2 },
   userName: { fontSize: 22, fontWeight: "900", color: "#333" },
   userEmail: { fontSize: 14, color: "#888", fontWeight: "600" },
+  userRolePill: {
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#475569",
+    backgroundColor: "#E2E8F0",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    textTransform: "uppercase",
+  },
   statsRow: { flexDirection: "row", justifyContent: "space-around", marginBottom: 25, backgroundColor: "#FFF", padding: 20, borderRadius: 20, elevation: 2 },
   statItem: { alignItems: "center" },
   statNum: { fontSize: 20, fontWeight: "900", color: "#1C1C1E", marginTop: 5 },
   statLabel: { fontSize: 11, color: "#8E8E93", fontWeight: "700", textTransform: "uppercase" },
   section: { backgroundColor: "#FFF", borderRadius: 20, padding: 20, marginBottom: 20, elevation: 2, shadowColor: "#000", shadowOpacity: 0.04 },
   sectionTitle: { fontSize: 11, fontWeight: "800", color: "#BBB", marginBottom: 15, letterSpacing: 1 },
-  professionRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  profBtn: { flex: 1, backgroundColor: '#F5F5F5', marginHorizontal: 5, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#EEE' },
-  profText: { marginTop: 5, fontWeight: '800', fontSize: 12, color: '#666' },
+  readOnlyField: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    minHeight: 48,
+  },
+  readOnlyText: { marginLeft: 10, color: "#334155", fontWeight: "700", flex: 1 },
   inputWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: "#F2F2F7", borderRadius: 12, paddingHorizontal: 12, marginBottom: 10 },
   input: { flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 15, fontWeight: "600", color: "#333" },
   settingsRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F9FB', padding: 15, borderRadius: 15 },

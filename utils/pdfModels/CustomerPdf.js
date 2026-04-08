@@ -4,6 +4,7 @@ import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 import { getBase64Image } from '../imageHelpers';
 import { logError } from "../logger";
+import { prepareNamedPdfUri } from "../pdfFileNaming";
 
 const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
 
@@ -235,7 +236,12 @@ export const handleCustomerPdf = async (project, companyData, options = { showVa
     `;
 
     const { uri } = await Print.printToFileAsync({ html });
-    await Sharing.shareAsync(uri);
+    const { uri: newUri, finalFileName } = await prepareNamedPdfUri(uri, "Kundunderlag", project?.name);
+    await Sharing.shareAsync(newUri, {
+      UTI: '.pdf',
+      mimeType: 'application/pdf',
+      dialogTitle: finalFileName,
+    });
   } catch (e) {
     await logError(e, { source: "mobile", feature: "pdf", model: "CustomerPdf" });
     Alert.alert("Fel", "Kunde inte skapa kundunderlag.");

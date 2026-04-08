@@ -3,6 +3,7 @@ import * as Sharing from "expo-sharing";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getBase64Image } from "../imageHelpers";
 import { logError } from "../logger";
+import { prepareNamedPdfUri } from "../pdfFileNaming";
 
 const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
 
@@ -172,7 +173,12 @@ export const handleSakerVattenIntygPdf = async (
     `;
 
     const { uri } = await Print.printToFileAsync({ html });
-    await Sharing.shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf" });
+    const { uri: newUri, finalFileName } = await prepareNamedPdfUri(uri, "Säker Vatten-intyg", project?.name);
+    await Sharing.shareAsync(newUri, {
+      UTI: ".pdf",
+      mimeType: "application/pdf",
+      dialogTitle: finalFileName,
+    });
   } catch (e) {
     await logError(e, { source: "mobile", feature: "pdf", model: "SakerVattenIntygPdf" });
     throw e;

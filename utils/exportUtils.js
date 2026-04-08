@@ -1,9 +1,10 @@
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Print from 'expo-print'; // 👈 Behövs för PDF
 import { Alert } from 'react-native';
 import { capitalizeFirst } from './stringHelpers';
+import { prepareNamedPdfUri } from './pdfFileNaming';
 
 /**
  * EXPORTERA PROJEKT TILL JSON-FIL (Bevarad logik)
@@ -164,7 +165,12 @@ export const generateProjectPdf = async (project, companyData, logoUri) => {
     `;
 
     const { uri } = await Print.printToFileAsync({ html, base64: false });
-    await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+    const { uri: newUri, finalFileName } = await prepareNamedPdfUri(uri, "Projektrapport", project?.name);
+    await Sharing.shareAsync(newUri, {
+      UTI: '.pdf',
+      mimeType: 'application/pdf',
+      dialogTitle: finalFileName,
+    });
     
   } catch (error) {
     console.error("PDF Error:", error);
