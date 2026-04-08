@@ -41,8 +41,25 @@ export function usePendingInvitation(userEmail) {
         });
       },
       (err) => {
-        console.error("[usePendingInvitation]", err);
         setInvitation(null);
+        const code = err?.code;
+        // permission-denied: Firestore-regler i Firebase-projektet matchar inte repots firestore.rules (deploy saknas).
+        // failed-precondition: saknar ev. sammansatt index för collection group-query.
+        if (code === "permission-denied" || code === "failed-precondition") {
+          if (__DEV__) {
+            console.warn(
+              "[usePendingInvitation]",
+              code,
+              code === "permission-denied"
+                ? "Deploya firestore.rules till Firebase (npm run deploy:rules:firebase i workaholic-web)."
+                : "Kontrollera att sammansatt index finns för collection group invitations + email + status."
+            );
+          }
+          return;
+        }
+        if (__DEV__) {
+          console.warn("[usePendingInvitation]", err);
+        }
       }
     );
 
