@@ -273,7 +273,12 @@ export const ProjectsProvider = ({ children }) => {
     if (updates.code) finalUpdates.code = updates.code.toString().toUpperCase().replace(/[^a-zA-Z0-9]/g, "");
 
     const ref = doc(db, "groups", projectId);
-    await updateDoc(ref, finalUpdates);
+    try {
+      await updateDoc(ref, finalUpdates);
+    } catch (err) {
+      console.error("[ProjectsContext] updateDoc misslyckades:", projectId, err?.code, err?.message, err);
+      throw err;
+    }
     
     if (selectedProject && selectedProject.id === projectId) {
         setSelectedProjectState(prev => ({ ...prev, ...finalUpdates }));

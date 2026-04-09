@@ -40,14 +40,31 @@ const getUnitSymbol = (unit) => {
 };
 
 const InspectionStoryItem = React.memo(
-  ({ item, checks, setStatus, rowComments, setRowComments, images, takePhoto, onRemovePhoto, onMeasurementBlur }) => {
+  ({
+    item,
+    checks,
+    setStatus,
+    rowComments,
+    setRowComments,
+    images,
+    takePhoto,
+    onRemovePhoto,
+    onMeasurementBlur,
+    persistData,
+  }) => {
     const latestValueRef = React.useRef("");
     const handleCommentChange = (t) => {
       latestValueRef.current = t;
       setRowComments((prev) => ({ ...prev, [item.id]: t }));
     };
     const handleBlur = () => {
-      persistData({ inspectionRowComments: rowComments });
+      const mergedComments = {
+        ...rowComments,
+        [item.id]: latestValueRef.current ?? rowComments[item.id] ?? "",
+      };
+      if (typeof persistData === "function") {
+        persistData({ inspectionRowComments: mergedComments });
+      }
       const valueStr = (latestValueRef.current || rowComments[item.id] || "").trim();
       if (item.unit && valueStr && onMeasurementBlur) onMeasurementBlur(item, valueStr);
     };
@@ -258,6 +275,7 @@ export default function InspectionScreen({ route, navigation }) {
             takePhoto={takePhoto}
             onRemovePhoto={(idx) => removePhotoForItem(currentItem.id, idx)}
             onMeasurementBlur={onMeasurementBlur}
+            persistData={persistData}
           />
         ) : (
           <InspectionSectionList

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -6,13 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
-  Dimensions,
   Modal,
   TextInput,
   Alert,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,7 +20,7 @@ import { WorkaholicTheme } from "../theme";
 import { ProjectsContext } from "../context/ProjectsContext";
 import { CompanyContext } from "../context/CompanyContext";
 import { useCompanyMembers } from "../hooks/useCompanyMembers";
-import AppHeader from "../components/AppHeader";
+import { assigneeBorderColor } from "../utils/planningColors";
 import { db, auth } from "../firebaseConfig";
 import {
   collection,
@@ -36,23 +36,25 @@ import {
 } from "firebase/firestore";
 import { sendPushNotification } from "../utils/pushService";
 
-const DAY_NAMES = ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"];
-const HOURS_START = 7;
-const HOURS_END = 16;
-const SLOT_INTERVAL = 15; // minuter
-const CELL_HEIGHT = 40;
+const DAY_NAMES_SHORT = ["Mån", "Tis", "Ons", "Tor", "Fre"];
 
-function getWeekRange(date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(d.getFullYear(), d.getMonth(), diff);
-  monday.setHours(0, 0, 0, 0);
+/** Måndag 00:00 samma ISO-vecka */
+function startOfIsoWeekMonday(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = x.getDay();
+  const offset = dow === 0 ? -6 : 1 - dow;
+  x.setDate(x.getDate() + offset);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+/** Arbetsvecka mån–fre (5 dagar) */
+function getWorkWeekDays(date) {
+  const mon = startOfIsoWeekMonday(date);
   const days = [];
-  for (let i = 0; i < 7; i++) {
-    const dayDate = new Date(monday);
-    dayDate.setDate(monday.getDate() + i);
-    days.push(dayDate);
+  for (let i = 0; i < 5; i++) {
+    const dd = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i);
+    days.push(dd);
   }
   return days;
 }
@@ -69,18 +71,6 @@ function getWeekNumber(date) {
 function timeToMinutes(timeStr) {
   const [h, m = 0] = String(timeStr).split(":").map(Number);
   return h * 60 + m;
-}
-
-/** Genererar alla tidsluckor 7:00–15:45 med 15-min intervall (sista slot slutar 16:00) */
-function getTimeSlots() {
-  const slots = [];
-  for (let h = HOURS_START; h < HOURS_END; h++) {
-    for (let m = 0; m < 60; m += SLOT_INTERVAL) {
-      const label = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-      slots.push({ label, minutes: h * 60 + m });
-    }
-  }
-  return slots;
 }
 
 /** Validerar och normaliserar tidssträng (HH:mm eller H:mm) */
@@ -130,7 +120,16 @@ export default function PlaneringScreen({ navigation }) {
   const { createProject } = React.useContext(ProjectsContext);
   const { members, loading: membersLoading } = useCompanyMembers(companyId);
 
+  const { width: windowWidth } = useWindowDimensions();
+  const dayScrollRef = useRef(null);
   const [currentDate, setCurrentDate] = useState(new Date());
+  /** 'week' | 'month' */
+  const [viewMode, setViewMode] = useState("week");
+  const [dayPageIndex, setDayPageIndex] = useState(0);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), 1);
+  });
   const [selectedUserId, setSelectedUserId] = useState(authUser?.uid ?? null);
   const [memberPickerVisible, setMemberPickerVisible] = useState(false);
   const [bookings, setBookings] = useState([]);
@@ -146,11 +145,18 @@ export default function PlaneringScreen({ navigation }) {
     assignedToUserId: null,
   });
 
-  const weekDays = useMemo(() => getWeekRange(currentDate), [currentDate]);
+  const workWeekDays = useMemo(() => getWorkWeekDays(currentDate), [currentDate]);
   const weekNum = getWeekNumber(currentDate);
   const year = currentDate.getFullYear();
-  const weekStartStr = useMemo(() => toDateStr(weekDays[0]), [weekDays]);
-  const weekEndStr = useMemo(() => toDateStr(weekDays[6]), [weekDays]);
+  const weekStartStr = useMemo(() => toDateStr(workWeekDays[0]), [workWeekDays]);
+  const weekEndStr = useMemo(() => toDateStr(workWeekDays[4]), [workWeekDays]);
+  const weekRangeLabel = useMemo(() => {
+    const a = workWeekDays[0];
+    const b = workWeekDays[4];
+    if (!a || !b) return "";
+    const o = { day: "numeric", month: "short" };
+    return `${a.toLocaleDateString("sv-SE", o)} – ${b.toLocaleDateString("sv-SE", { ...o, year: "numeric" })}`;
+  }, [workWeekDays]);
 
   useEffect(() => {
     if (authUser?.uid && !selectedUserId) setSelectedUserId(authUser.uid);
@@ -181,7 +187,7 @@ export default function PlaneringScreen({ navigation }) {
       where("date", "<=", weekEndStr)
     );
     const unsub = onSnapshot(q, (snap) => {
-      const weekStart = weekDays[0].getTime();
+      const weekStart = workWeekDays[0].getTime();
       const dayMs = 24 * 60 * 60 * 1000;
       const list = snap.docs.map((docSnap) => {
         const d = docSnap.data();
@@ -189,6 +195,7 @@ export default function PlaneringScreen({ navigation }) {
         const dateTime = dateStr ? new Date(dateStr + "T12:00:00").getTime() : weekStart;
         const dayIndex = Math.round((dateTime - weekStart) / dayMs);
         const clamped = Math.max(0, Math.min(6, dayIndex));
+        if (clamped > 4) return null;
         return {
           id: docSnap.id,
           dayIndex: clamped,
@@ -199,51 +206,50 @@ export default function PlaneringScreen({ navigation }) {
           projectId: d.projectId || null,
           date: d.date,
         };
-      });
+      }).filter(Boolean);
       setBookings(list);
       setBookingsLoading(false);
     }, () => setBookingsLoading(false));
     return () => unsub();
-  }, [companyId, selectedUserId, weekStartStr, weekEndStr, weekDays]);
-
-  const goToPrevWeek = () => {
-    const prev = new Date(currentDate);
-    prev.setDate(prev.getDate() - 7);
-    setCurrentDate(prev);
-  };
-
-  const goToNextWeek = () => {
-    const next = new Date(currentDate);
-    next.setDate(next.getDate() + 7);
-    setCurrentDate(next);
-  };
+  }, [companyId, selectedUserId, weekStartStr, weekEndStr, workWeekDays]);
 
   const goToToday = () => {
     setCurrentDate(new Date());
-  };
-
-  const timeSlots = useMemo(() => getTimeSlots(), []);
-
-  const getBookingsForDay = useCallback(
-    (dayIndex) => bookings.filter((b) => b.dayIndex === dayIndex),
-    [bookings]
-  );
-
-  const getBookingAtSlot = (dayIndex, slotMinutes) => {
-    const bookings = getBookingsForDay(dayIndex);
-    const slotEnd = slotMinutes + SLOT_INTERVAL;
-    return bookings.find((b) => {
-      const start = timeToMinutes(b.startTime);
-      const end = timeToMinutes(b.endTime);
-      return slotMinutes < end && slotEnd > start;
+    setViewMode("week");
+    setDayPageIndex(0);
+    requestAnimationFrame(() => {
+      dayScrollRef.current?.scrollTo({ x: 0, animated: true });
     });
   };
 
-  const isSlotStartOfBooking = (slotMinutes, booking) => {
-    const startMin = timeToMinutes(booking.startTime);
-    const firstSlot = Math.floor(startMin / SLOT_INTERVAL) * SLOT_INTERVAL;
-    return slotMinutes === firstSlot;
-  };
+  const getBookingsForDay = useCallback(
+    (dayIndex) =>
+      bookings
+        .filter((b) => b.dayIndex === dayIndex)
+        .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime)),
+    [bookings]
+  );
+
+  useEffect(() => {
+    setDayPageIndex(0);
+    requestAnimationFrame(() => {
+      dayScrollRef.current?.scrollTo({ x: 0, animated: false });
+    });
+  }, [weekStartStr, windowWidth]);
+
+  const goToPrevWeek = useCallback(() => {
+    const prev = new Date(currentDate);
+    prev.setDate(prev.getDate() - 7);
+    setCurrentDate(prev);
+    setViewMode("week");
+  }, [currentDate]);
+
+  const goToNextWeek = useCallback(() => {
+    const next = new Date(currentDate);
+    next.setDate(next.getDate() + 7);
+    setCurrentDate(next);
+    setViewMode("week");
+  }, [currentDate]);
 
   const openEdit = (booking) => {
     setEditingBooking(booking);
@@ -261,8 +267,11 @@ export default function PlaneringScreen({ navigation }) {
   const openNewBooking = () => {
     setEditingBooking(null);
     const today = new Date();
-    const dayIdx = weekDays.findIndex(
-      (d) => d.getDate() === today.getDate() && d.getMonth() === today.getMonth()
+    const dayIdx = workWeekDays.findIndex(
+      (d) =>
+        d.getDate() === today.getDate() &&
+        d.getMonth() === today.getMonth() &&
+        d.getFullYear() === today.getFullYear()
     );
     setEditForm({
       dayIndex: dayIdx >= 0 ? dayIdx : 0,
@@ -291,8 +300,8 @@ export default function PlaneringScreen({ navigation }) {
       Alert.alert("Ogiltig tid", "Sluttid måste vara efter starttid.");
       return;
     }
-    if (editForm.dayIndex < 0 || editForm.dayIndex > 6) {
-      Alert.alert("Ogiltig dag", "Välj en dag i veckan.");
+    if (editForm.dayIndex < 0 || editForm.dayIndex > 4) {
+      Alert.alert("Ogiltig dag", "Välj en arbetsdag (mån–fre).");
       return;
     }
     const targetUserId = editForm.assignedToUserId || selectedUserId;
@@ -303,7 +312,7 @@ export default function PlaneringScreen({ navigation }) {
 
     const title = (editForm.title || "").trim() || "Namnlös bokning";
     const description = (editForm.description || "").trim();
-    const dateStr = toDateStr(weekDays[editForm.dayIndex]);
+    const dateStr = toDateStr(workWeekDays[editForm.dayIndex]);
     const payload = {
       date: dateStr,
       startTime: start,
@@ -417,6 +426,52 @@ export default function PlaneringScreen({ navigation }) {
     ]);
   };
 
+  const assigneeAccent = useMemo(() => assigneeBorderColor(selectedUserId), [selectedUserId]);
+
+  const monthGrid = useMemo(() => {
+    const y = calendarMonth.getFullYear();
+    const m = calendarMonth.getMonth();
+    const first = new Date(y, m, 1);
+    const startPad = (first.getDay() + 6) % 7;
+    const dim = new Date(y, m + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < startPad; i++) cells.push(null);
+    for (let d = 1; d <= dim; d++) cells.push(d);
+    while (cells.length % 7 !== 0) cells.push(null);
+    return { cells, y, m };
+  }, [calendarMonth]);
+
+  const selectCalendarDay = useCallback(
+    (day) => {
+      if (day == null) return;
+      const { y, m } = monthGrid;
+      const picked = new Date(y, m, day);
+      setCurrentDate(picked);
+      setViewMode("week");
+      const mon = startOfIsoWeekMonday(picked);
+      const idx = Math.round((picked.getTime() - mon.getTime()) / 86400000);
+      const page = Math.max(0, Math.min(4, idx));
+      setDayPageIndex(page);
+      requestAnimationFrame(() => {
+        dayScrollRef.current?.scrollTo({ x: page * windowWidth, animated: true });
+      });
+    },
+    [monthGrid, windowWidth]
+  );
+
+  const hasBookingOnDay = useCallback(
+    (y, m, d) => {
+      const key =
+        y +
+        "-" +
+        String(m + 1).padStart(2, "0") +
+        "-" +
+        String(d).padStart(2, "0");
+      return bookings.some((b) => b.date === key);
+    },
+    [bookings]
+  );
+
   if (!companyId) {
     return (
       <View style={[styles.container, styles.centerContent]}>
@@ -428,35 +483,86 @@ export default function PlaneringScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-      <AppHeader title="PLANERING" showBackButton={false} navigation={navigation} />
-      <View style={[styles.pageHeader, { paddingTop: 12 }]}>
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+      <View style={[styles.topSafe, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.titleRow}>
+          <Text style={styles.screenTitle}>Planering</Text>
+          <TouchableOpacity
+            style={[styles.iconPill, viewMode === "month" && styles.iconPillActive]}
+            onPress={() => {
+              setCalendarMonth(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
+              setViewMode((m) => (m === "month" ? "week" : "month"));
+            }}
+            accessibilityLabel="Växla månadsvy"
+          >
+            <Ionicons
+              name="calendar-outline"
+              size={22}
+              color={viewMode === "month" ? "#FFF" : "#475569"}
+            />
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity
           style={styles.memberPickerRow}
           onPress={() => setMemberPickerVisible(true)}
           disabled={membersLoading}
         >
-          <Ionicons name="person-outline" size={18} color="#555" />
-          <Text style={styles.memberPickerLabel}>
+          <Ionicons name="person-outline" size={18} color="#64748b" />
+          <Text style={styles.memberPickerLabel} numberOfLines={1}>
             {membersLoading
               ? "Laddar..."
               : selectedMember
-                ? `Planering för ${selectedMember.displayName || selectedMember.email || selectedUserId}`
+                ? `Visar ${selectedMember.displayName || selectedMember.email || selectedUserId}`
                 : "Välj anställd"}
           </Text>
-          <Ionicons name="chevron-down" size={18} color="#555" />
+          <Ionicons name="chevron-down" size={18} color="#64748b" />
         </TouchableOpacity>
-        <View style={styles.weekNav}>
-          <TouchableOpacity onPress={goToPrevWeek} style={styles.navBtn}>
-            <Ionicons name="chevron-back" size={24} color="#1C1C1E" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={goToToday} style={styles.weekLabel}>
-            <Text style={styles.weekText}>Vecka {weekNum}, {year}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={goToNextWeek} style={styles.navBtn}>
-            <Ionicons name="chevron-forward" size={24} color="#1C1C1E" />
-          </TouchableOpacity>
-        </View>
+
+        {viewMode === "week" ? (
+          <>
+            <View style={styles.weekNavPills}>
+              <TouchableOpacity style={styles.navPill} onPress={goToPrevWeek}>
+                <Text style={styles.navPillText}>Vecka bakåt</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navPillPrimary} onPress={goToToday}>
+                <Text style={styles.navPillPrimaryText}>Denna vecka</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navPill} onPress={goToNextWeek}>
+                <Text style={styles.navPillText}>Vecka framåt</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.weekMetaRow}>
+              <Text style={styles.weekBadge}>Vecka {weekNum}</Text>
+              <Text style={styles.weekYear}>{year}</Text>
+              <Text style={styles.weekRangeMuted} numberOfLines={1}>
+                {weekRangeLabel}
+              </Text>
+            </View>
+          </>
+        ) : (
+          <View style={styles.monthNavRow}>
+            <TouchableOpacity
+              style={styles.monthNavBtn}
+              onPress={() =>
+                setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))
+              }
+            >
+              <Ionicons name="chevron-back" size={22} color="#334155" />
+            </TouchableOpacity>
+            <Text style={styles.monthNavTitle}>
+              {calendarMonth.toLocaleDateString("sv-SE", { month: "long", year: "numeric" })}
+            </Text>
+            <TouchableOpacity
+              style={styles.monthNavBtn}
+              onPress={() =>
+                setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))
+              }
+            >
+              <Ionicons name="chevron-forward" size={22} color="#334155" />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {bookingsLoading && (
@@ -466,79 +572,147 @@ export default function PlaneringScreen({ navigation }) {
         </View>
       )}
 
-      {/* Dag-rubriker – 40px spacer så kolumnerna livar med tidsgridet */}
-      <View style={styles.dayHeaders}>
-        <View style={styles.dayHeaderSpacer} />
-        {weekDays.map((day, i) => (
-          <View key={i} style={styles.dayHeader}>
-            <Text style={styles.dayName}>{DAY_NAMES[i]}</Text>
-            <Text style={styles.dayDate}>{day.getDate()}</Text>
-            <Text style={styles.dayMonth}>
-              {day.toLocaleDateString("sv-SE", { month: "short" })}
-            </Text>
+      {viewMode === "month" ? (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[styles.monthScrollContent, { paddingBottom: insets.bottom + 100 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.monthBoard}>
+            {["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"].map((wd) => (
+              <Text key={wd} style={styles.monthWeekdayHdr}>
+                {wd}
+              </Text>
+            ))}
+            {monthGrid.cells.map((cell, i) => {
+              if (cell == null) {
+                return <View key={`e-${i}`} style={styles.monthCellEmpty} />;
+              }
+              const { y, m } = monthGrid;
+              const isToday =
+                new Date().getDate() === cell &&
+                new Date().getMonth() === m &&
+                new Date().getFullYear() === y;
+              const dot = hasBookingOnDay(y, m, cell);
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.monthCell, isToday && styles.monthCellToday]}
+                  onPress={() => selectCalendarDay(cell)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.monthCellNum, isToday && styles.monthCellNumToday]}>{cell}</Text>
+                  {dot ? <View style={styles.monthDot} /> : null}
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        ))}
-      </View>
-
-      {/* Veckovy med tidsluckor */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: insets.bottom + 100 },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Tid-kolumn + dag-kolumner */}
-        <View style={styles.grid}>
-          {timeSlots.map((slot, slotIdx) => (
-            <View key={slotIdx} style={styles.timeRow}>
-              <View style={styles.timeCell}>
-                <Text style={styles.timeText}>{slot.label}</Text>
-              </View>
-              <View style={styles.daysRow}>
-                {weekDays.map((day, dayIdx) => {
-                  const booking = getBookingAtSlot(dayIdx, slot.minutes);
-                  const isStart = booking && isSlotStartOfBooking(slot.minutes, booking);
-
-                  return (
-                    <TouchableOpacity
-                      key={`${dayIdx}-${slotIdx}`}
-                      style={[
-                        styles.cell,
-                        booking && styles.cellWithBooking,
-                      ]}
-                      onPress={booking ? () => openEdit(booking) : undefined}
-                      activeOpacity={booking ? 0.7 : 1}
-                      disabled={!booking}
-                    >
-                      {isStart && booking && (
-                        <View style={styles.bookingBlock}>
-                          <Text style={styles.bookingTitle} numberOfLines={1}>
-                            {booking.title}
-                          </Text>
-                          <Text style={styles.bookingTime}>
-                            {booking.startTime}–{booking.endTime}
-                          </Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+          <Text style={styles.monthHint}>Tryck på en dag för att öppna den veckans planering.</Text>
+        </ScrollView>
+      ) : (
+        <>
+          <View style={styles.boardShell}>
+            <View style={styles.boardHeader}>
+              <Text style={styles.boardHeaderTitle}>Arbetsvecka</Text>
+              <Text style={styles.boardHeaderSub} numberOfLines={1}>
+                {weekRangeLabel}
+              </Text>
             </View>
-          ))}
-        </View>
-      </ScrollView>
+            <View style={styles.dayPillRow}>
+              {workWeekDays.map((d, i) => {
+                const sub = d.toLocaleDateString("sv-SE", { day: "numeric", month: "short" });
+                const active = dayPageIndex === i;
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    style={[styles.dayPill, active && styles.dayPillActive]}
+                    onPress={() => {
+                      setDayPageIndex(i);
+                      dayScrollRef.current?.scrollTo({ x: i * windowWidth, animated: true });
+                    }}
+                  >
+                    <Text style={[styles.dayPillWeek, active && styles.dayPillWeekActive]} numberOfLines={1}>
+                      {DAY_NAMES_SHORT[i]}
+                    </Text>
+                    <Text style={[styles.dayPillSub, active && styles.dayPillSubActive]} numberOfLines={1}>
+                      {sub}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <ScrollView
+              ref={dayScrollRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              onMomentumScrollEnd={(e) => {
+                const x = e.nativeEvent.contentOffset.x;
+                const idx = Math.round(x / Math.max(1, windowWidth));
+                setDayPageIndex(Math.max(0, Math.min(4, idx)));
+              }}
+              style={styles.dayPager}
+            >
+              {workWeekDays.map((dayDate, dayIdx) => {
+                const list = getBookingsForDay(dayIdx);
+                return (
+                  <ScrollView
+                    key={dayIdx}
+                    style={[styles.dayColumn, { width: windowWidth }]}
+                    contentContainerStyle={{
+                      paddingBottom: insets.bottom + 120,
+                      paddingHorizontal: 12,
+                      paddingTop: 8,
+                    }}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {list.length === 0 ? (
+                      <Text style={styles.emptyDay}>Inget inplanerat</Text>
+                    ) : (
+                      list.map((booking) => (
+                        <TouchableOpacity
+                          key={booking.id}
+                          style={[styles.jobCard, { borderLeftColor: assigneeAccent }]}
+                          onPress={() => openEdit(booking)}
+                          activeOpacity={0.85}
+                        >
+                          <View style={styles.timeBadge}>
+                            <Text style={styles.timeBadgeText}>
+                              {booking.startTime}–{booking.endTime}
+                            </Text>
+                          </View>
+                          <Text style={styles.jobWho} numberOfLines={1}>
+                            {selectedMember?.displayName || selectedMember?.email || "—"}
+                          </Text>
+                          <Text style={styles.jobTitle} numberOfLines={3}>
+                            {booking.title || "—"}
+                          </Text>
+                          {booking.description ? (
+                            <Text style={styles.jobDesc} numberOfLines={4}>
+                              {booking.description}
+                            </Text>
+                          ) : null}
+                        </TouchableOpacity>
+                      ))
+                    )}
+                  </ScrollView>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </>
+      )}
 
-      {/* FAB för ny bokning */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 90 }]}
-        activeOpacity={0.8}
-        onPress={openNewBooking}
-      >
-        <Ionicons name="add" size={28} color="#FFF" />
-      </TouchableOpacity>
+      {viewMode === "week" ? (
+        <TouchableOpacity
+          style={[styles.fab, { bottom: insets.bottom + 90 }]}
+          activeOpacity={0.8}
+          onPress={openNewBooking}
+        >
+          <Ionicons name="add" size={28} color="#FFF" />
+        </TouchableOpacity>
+      ) : null}
 
       {/* Modal: redigera / ny bokning */}
       <Modal visible={editModalVisible} transparent animationType="slide">
@@ -607,7 +781,7 @@ export default function PlaneringScreen({ navigation }) {
 
             <Text style={styles.modalLabel}>Dag i veckan</Text>
             <View style={styles.dayPickerRow}>
-              {weekDays.map((day, i) => (
+              {workWeekDays.map((day, i) => (
                 <TouchableOpacity
                   key={i}
                   style={[
@@ -622,7 +796,7 @@ export default function PlaneringScreen({ navigation }) {
                       editForm.dayIndex === i && styles.dayPickerLabelActive,
                     ]}
                   >
-                    {DAY_NAMES[i]}
+                    {DAY_NAMES_SHORT[i]}
                   </Text>
                   <Text
                     style={[
@@ -713,121 +887,279 @@ export default function PlaneringScreen({ navigation }) {
   );
 }
 
-const { width } = Dimensions.get("window");
-const TIME_COLUMN_WIDTH = 40;
-const HORIZONTAL_PADDING = 10;
-const dayWidth = (width - HORIZONTAL_PADDING * 2 - TIME_COLUMN_WIDTH) / 7;
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F9FB" },
+  container: { flex: 1, backgroundColor: "#f1f5f9" },
   centerContent: { justifyContent: "center", alignItems: "center", padding: 24 },
   placeholderText: { fontSize: 16, color: "#666", textAlign: "center" },
-  pageHeader: {
-    backgroundColor: "#FFF",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+  topSafe: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    borderBottomColor: "#e2e8f0",
   },
-  headerTitle: {
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  screenTitle: {
     fontSize: 22,
-    fontWeight: "900",
-    color: "#1C1C1E",
-    marginBottom: 8,
+    fontWeight: "700",
+    color: "#0f172a",
+    letterSpacing: -0.3,
+  },
+  iconPill: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#f1f5f9",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  iconPillActive: {
+    backgroundColor: WorkaholicTheme.colors.primary,
+    borderColor: WorkaholicTheme.colors.primary,
   },
   memberPickerRow: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
-    gap: 6,
+    alignSelf: "stretch",
+    gap: 8,
     marginBottom: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: "#F0F0F0",
-    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "#f8fafc",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
   },
-  memberPickerLabel: { fontSize: 13, fontWeight: "700", color: "#555", maxWidth: 220 },
-  weekNav: {
+  memberPickerLabel: { flex: 1, fontSize: 14, fontWeight: "600", color: "#475569" },
+  weekNavPills: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 10,
+    justifyContent: "center",
+  },
+  navPill: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  navPillText: { fontSize: 12, fontWeight: "700", color: "#334155" },
+  navPillPrimary: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: WorkaholicTheme.colors.primary,
+  },
+  navPillPrimaryText: { fontSize: 12, fontWeight: "800", color: "#fff" },
+  weekMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 4,
+  },
+  weekBadge: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0f172a",
+    backgroundColor: "#e2e8f0",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  weekYear: { fontSize: 13, fontWeight: "700", color: "#64748b" },
+  weekRangeMuted: { flex: 1, fontSize: 11, color: "#94a3b8", fontWeight: "600", textAlign: "right", minWidth: 120 },
+  monthNavRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 4,
   },
-  navBtn: { padding: 8 },
-  weekLabel: { flex: 1, alignItems: "center" },
-  weekText: { fontSize: 16, fontWeight: "800", color: "#555" },
-
-  dayHeaders: {
-    flexDirection: "row",
-    backgroundColor: "#FFF",
-    paddingLeft: HORIZONTAL_PADDING,
-    paddingRight: HORIZONTAL_PADDING,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEE",
-    alignItems: "center",
+  monthNavBtn: { padding: 8 },
+  monthNavTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0f172a",
+    textTransform: "capitalize",
   },
-  dayHeaderSpacer: {
-    width: TIME_COLUMN_WIDTH,
-  },
-  dayHeader: {
-    width: dayWidth,
-    alignItems: "center",
-  },
-  dayName: { fontSize: 10, fontWeight: "900", color: "#999", marginBottom: 2 },
-  dayDate: { fontSize: 16, fontWeight: "900", color: "#1C1C1E" },
-  dayMonth: { fontSize: 9, color: "#AAA", fontWeight: "700" },
-
   loadingBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
     paddingVertical: 8,
-    backgroundColor: "#FFF",
+    backgroundColor: "#fff",
   },
-  loadingText: { fontSize: 12, color: "#666", fontWeight: "600" },
+  loadingText: { fontSize: 12, color: "#64748b", fontWeight: "600" },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: HORIZONTAL_PADDING },
-
-  grid: { paddingTop: 8 },
-  timeRow: {
+  monthScrollContent: { paddingHorizontal: 16, paddingTop: 12 },
+  monthBoard: {
     flexDirection: "row",
-    height: CELL_HEIGHT,
-    marginBottom: 2,
-  },
-  timeCell: {
-    width: TIME_COLUMN_WIDTH,
-    justifyContent: "flex-start",
-    paddingTop: 2,
-  },
-  timeText: { fontSize: 9, fontWeight: "700", color: "#AAA" },
-  daysRow: { flex: 1, flexDirection: "row" },
-  cell: {
-    width: dayWidth - 4,
-    marginHorizontal: 2,
-    borderRadius: 6,
+    flexWrap: "wrap",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
     overflow: "hidden",
+    backgroundColor: "#fff",
   },
-  cellWithBooking: {
-    backgroundColor: WorkaholicTheme.colors.primary + "15",
+  monthWeekdayHdr: {
+    width: "14.28%",
+    paddingVertical: 8,
+    textAlign: "center",
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#64748b",
+    backgroundColor: "#f8fafc",
+    borderBottomWidth: 1,
+    borderColor: "#e2e8f0",
   },
-  bookingBlock: {
-    flex: 1,
-    backgroundColor: WorkaholicTheme.colors.primary,
-    borderRadius: 6,
-    padding: 4,
+  monthCellEmpty: {
+    width: "14.28%",
+    aspectRatio: 1,
+    backgroundColor: "#fafafa",
+    borderWidth: 0.5,
+    borderColor: "#f1f5f9",
+  },
+  monthCell: {
+    width: "14.28%",
+    aspectRatio: 1,
+    alignItems: "center",
     justifyContent: "center",
+    borderWidth: 0.5,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#fff",
   },
-  bookingTitle: {
+  monthCellToday: {
+    backgroundColor: "#eff6ff",
+  },
+  monthCellNum: { fontSize: 15, fontWeight: "700", color: "#0f172a" },
+  monthCellNumToday: { color: WorkaholicTheme.colors.primary },
+  monthDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: WorkaholicTheme.colors.primary,
+    marginTop: 4,
+  },
+  monthHint: {
+    marginTop: 12,
+    fontSize: 12,
+    color: "#94a3b8",
+    textAlign: "center",
+    fontWeight: "500",
+  },
+  boardShell: {
+    flex: 1,
+    marginHorizontal: 12,
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#fff",
+    overflow: "hidden",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 3,
+      },
+      android: { elevation: 2 },
+    }),
+  },
+  boardHeader: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "rgba(248,250,252,0.95)",
+  },
+  boardHeaderTitle: { fontSize: 14, fontWeight: "700", color: "#0f172a" },
+  boardHeaderSub: { fontSize: 11, color: "#64748b", fontWeight: "500", marginTop: 2 },
+  dayPillRow: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#fff",
+  },
+  dayPill: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    alignItems: "center",
+    borderBottomWidth: 2,
+    borderColor: "transparent",
+  },
+  dayPillActive: {
+    borderColor: WorkaholicTheme.colors.primary,
+    backgroundColor: "#fafafa",
+  },
+  dayPillWeek: {
     fontSize: 9,
     fontWeight: "800",
-    color: "#FFF",
+    color: "#64748b",
+    textTransform: "capitalize",
   },
-  bookingTime: {
-    fontSize: 8,
-    color: "rgba(255,255,255,0.9)",
-    marginTop: 1,
+  dayPillWeekActive: { color: "#0f172a" },
+  dayPillSub: { fontSize: 9, color: "#94a3b8", fontWeight: "600", marginTop: 2 },
+  dayPillSubActive: { color: WorkaholicTheme.colors.primary },
+  dayPager: { flex: 1 },
+  dayColumn: {},
+  emptyDay: {
+    textAlign: "center",
+    color: "#94a3b8",
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 24,
   },
+  jobCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderLeftWidth: 4,
+    backgroundColor: "#fff",
+    padding: 10,
+    marginBottom: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      },
+      android: { elevation: 1 },
+    }),
+  },
+  timeBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#0f172a",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  timeBadgeText: { fontSize: 10, fontWeight: "800", color: "#fff" },
+  jobWho: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+    marginBottom: 4,
+  },
+  jobTitle: { fontSize: 14, fontWeight: "700", color: "#0f172a", lineHeight: 18 },
+  jobDesc: { fontSize: 12, color: "#475569", marginTop: 6, lineHeight: 16 },
 
   fab: {
     position: "absolute",

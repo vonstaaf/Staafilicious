@@ -25,8 +25,8 @@ export default function LicenseExpiredScreen() {
     Linking.openURL(`${WEB_URL}/foretag/licenser`);
   };
 
-  const openMinaSidor = () => {
-    Linking.openURL(`${WEB_URL}/mina-sidor`);
+  const openLicenserPortal = () => {
+    Linking.openURL(`${WEB_URL}/foretag/licenser`);
   };
 
   return (
@@ -47,7 +47,7 @@ export default function LicenseExpiredScreen() {
         <Text style={styles.cardTitle}>Så gör du</Text>
         <Text style={styles.cardText}>
           1. Öppna Workaholic på webben (länk nedan).{"\n"}
-          2. {isTrialExpired ? "Köp licenser eller starta provperiod med annat företag." : "Logga in på Mina sidor och förläng/uppdatera betalningen."}{"\n"}
+          2. {isTrialExpired ? "Köp licenser eller starta provperiod med annat företag." : "Logga in i Företagsportalen och gå till Licenser för att förlänga eller uppdatera betalningen."}{"\n"}
           3. Starta om appen när licensen är aktiv igen.
         </Text>
         <TouchableOpacity style={styles.webLinkBtn} onPress={openWebPricing}>
@@ -55,8 +55,8 @@ export default function LicenseExpiredScreen() {
           <Text style={styles.webLinkText}>Lås upp Workaholic</Text>
         </TouchableOpacity>
         {!isTrialExpired && (
-          <TouchableOpacity style={[styles.webLinkBtn, { marginTop: 8 }]} onPress={openMinaSidor}>
-            <Text style={styles.webLinkText}>Mina sidor (avsluta / hantera prenumeration)</Text>
+          <TouchableOpacity style={[styles.webLinkBtn, { marginTop: 8 }]} onPress={openLicenserPortal}>
+            <Text style={styles.webLinkText}>Licenser (avsluta / hantera prenumeration)</Text>
           </TouchableOpacity>
         )}
       </View>

@@ -225,22 +225,35 @@ export function useInspectionForm(project, routeParams, updateProject, templates
 
   const handleSignature = useCallback(
     async (sig) => {
-      if (items.length === 0 || !project) return;
+      console.log("[useInspectionForm] handleSignature anropad");
+      if (items.length === 0 || !project) {
+        console.error("[useInspectionForm] Avbryter: saknar items eller project.");
+        return;
+      }
+      const raw = typeof sig === "string" ? sig.trim() : "";
+      const base64Part = raw.includes("base64,") ? raw.split("base64,")[1] : raw.replace(/^data:image\/\w+;base64,/, "");
+      if (!base64Part || base64Part.length < 80) {
+        console.error("[useInspectionForm] Signatur för kort eller tom (base64-längd:", base64Part?.length ?? 0, ")");
+        Alert.alert("Signatur saknas", "Rita en tydlig signatur och försök igen.");
+        return;
+      }
+
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
       setIsSignModalVisible(false);
 
       setTimeout(async () => {
         setIsProcessing(true);
         try {
-          let fullSig = sig.startsWith("data:") ? sig : "data:image/png;base64," + sig;
+          let fullSig = raw.startsWith("data:") ? raw : "data:image/png;base64," + raw;
           try {
             fullSig = await rotateSignatureForPortrait(fullSig);
-          } catch {
-            // behåll original om rotation misslyckas
+            console.log("[useInspectionForm] Signatur roterad, data-URI-längd:", fullSig?.length ?? 0);
+          } catch (rotErr) {
+            console.error("[useInspectionForm] rotateSignatureForPortrait:", rotErr);
           }
           const entryData = {
             id: editingHistoryId || Date.now(),
-            date: editingHistoryId ? routeParams.existingData.date : new Date().toISOString(),
+            date: editingHistoryId ? routeParams?.existingData?.date : new Date().toISOString(),
             description: inspectionSubtitle || capitalizeFirst(project.name),
             checks,
             rowComments,
@@ -259,6 +272,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
                 )
               : [entryData, ...(project.inspectionHistory || [])];
 
+          console.log("[useInspectionForm] Sparar inspectionHistory, poster:", updatedHistory?.length);
           await updateProject(project.id, {
             inspectionHistory: updatedHistory,
             ...(editingHistoryId || routeParams?.customTemplate
@@ -273,6 +287,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
                   inspectionItems: [],
                 }),
           });
+          console.log("[useInspectionForm] updateProject klar.");
 
           setIsNameEntryModalVisible(false);
           navigation.goBack();
@@ -293,7 +308,12 @@ export function useInspectionForm(project, routeParams, updateProject, templates
             ]);
           }, 500);
         } catch (e) {
-          Alert.alert("Fel", "Kunde inte spara.");
+          console.error("[useInspectionForm] Kunde inte spara egenkontroll:", e?.code, e?.message, e);
+          const msg =
+            e?.code === "invalid-argument"
+              ? "Datat är för stort för Firestore. Kontakta support eller färre bilagor."
+              : e?.message || "Kunde inte spara.";
+          Alert.alert("Fel", msg);
         } finally {
           setIsProcessing(false);
         }
@@ -314,6 +334,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
       companyFromTenant,
       updateProject,
       navigation,
+      handleInspectionPdf,
     ]
   );
 
