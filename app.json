@@ -77,7 +77,7 @@
             "supports16KPageSize": true,
             "packagingOptions": {
               "jniLibs": {
-                "useLegacyPackaging": true
+                "useLegacyPackaging": false
               }
             }
           }
