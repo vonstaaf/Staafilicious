@@ -39,6 +39,14 @@
         "android.permission.RECORD_AUDIO"
       ]
     },
+    "androidNavigationBar": {
+      "visible": "always",
+      "barStyle": "dark-content",
+      "transparent": true
+    },
+    "androidStatusBar": {
+      "translucent": true
+    },
     "web": {
       "favicon": "./assets/logo.png"
     },
