@@ -19,7 +19,6 @@ export default function SignModal({ visible, onClose, onSignature, onEmpty, titl
   const signatureRef = useRef();
 
   const handleEmpty = () => {
-    console.error("[SignModal] Tom signatur (onEmpty).");
     if (typeof onEmpty === "function") {
       onEmpty();
       return;
@@ -33,16 +32,13 @@ export default function SignModal({ visible, onClose, onSignature, onEmpty, titl
         <View style={styles.modalHeader}>
           <Text style={styles.modalTitle}>{title}</Text>
           <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close-circle" size={32} color="#1C1E" />
+            <Ionicons name="close-circle" size={32} color="#1C1C1E" />
           </TouchableOpacity>
         </View>
         <View style={[styles.canvasWrap, { height: SIGNATURE_HEIGHT }]}>
           <SignatureScreen
             ref={signatureRef}
-            onOK={(data) => {
-              console.log("[SignModal] onOK, data length:", typeof data === "string" ? data.length : 0);
-              onSignature(data);
-            }}
+            onOK={onSignature}
             onEmpty={handleEmpty}
             descriptionText="Signera här"
             autoClear={false}
@@ -56,10 +52,7 @@ export default function SignModal({ visible, onClose, onSignature, onEmpty, titl
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={() => {
-              console.log("[SignModal] readSignature()");
-              signatureRef.current?.readSignature();
-            }}
+            onPress={() => signatureRef.current?.readSignature()}
           >
             <Text style={styles.btnText}>{buttonText}</Text>
           </TouchableOpacity>
@@ -72,7 +65,7 @@ export default function SignModal({ visible, onClose, onSignature, onEmpty, titl
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", padding: 25, alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#EEE" },
-  modalTitle: { fontSize: 18, fontWeight: "900", color: "#1C1E" },
+  modalTitle: { fontSize: 18, fontWeight: "900", color: "#1C1C1E" },
   canvasWrap: { width: "100%", backgroundColor: "#FFF" },
   canvas: { flex: 1, width: "100%", height: "100%" },
   footer: { padding: 20, paddingBottom: 40 },

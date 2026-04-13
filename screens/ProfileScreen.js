@@ -24,15 +24,15 @@ import { ProjectsContext } from "../context/ProjectsContext";
 import { CompanyContext } from "../context/CompanyContext";
 import AppHeader from "../components/AppHeader";
 import { getCompanyInitials } from "../utils/stringHelpers";
+import { PROFESSION_OPTIONS, normalizeProfession } from "../constants/professions";
+import { ALL_WHOLESALERS } from "../constants/wholesalers";
 
 // Backward compatibility guard for older cached bundles referencing ROLES.
 const ROLES = Object.freeze({});
 
 function profileRoleToProfessionKeys(role) {
-  if (role === "El") return ["el"];
-  if (role === "Rör") return ["vvs"];
-  if (role === "Bygg") return ["bygg"];
-  return [];
+  const key = normalizeProfession(role);
+  return [key];
 }
 
 export default function ProfileScreen({ navigation }) {
@@ -46,8 +46,9 @@ export default function ProfileScreen({ navigation }) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [profession, setProfession] = useState("El");
+  const [profession, setProfession] = useState("el");
   const [phone, setPhone] = useState("");
+  const [preferredWholesalers, setPreferredWholesalers] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const profileAccentTheme = useMemo(
@@ -85,15 +86,15 @@ export default function ProfileScreen({ navigation }) {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const d = docSnap.data();
-        let fetchedProf = d.profession || "El";
-        let pLower = fetchedProf.toLowerCase();
-        if (pLower.includes("el")) setProfession("El");
-        else if (pLower.includes("Bygg") || pLower.includes("bygg")) setProfession("Bygg");
-        else if (pLower.includes("rör") || pLower.includes("vvs")) setProfession("Rör");
-        else setProfession(fetchedProf);
+        setProfession(normalizeProfession(d.profession));
         setPhone(d.phone || "");
+        if (Array.isArray(d?.preferences?.preferredWholesalers)) {
+          setPreferredWholesalers(d.preferences.preferredWholesalers);
+        }
       }
-    } catch (e) { console.log("Kunde inte hämta data", e); }
+    } catch {
+      // noop
+    }
   };
 
   const handleSave = async () => {
@@ -111,6 +112,8 @@ export default function ProfileScreen({ navigation }) {
       await updateDoc(doc(db, "users", user.uid), {
         displayName: displayName.trim(),
         phone: phone.trim(),
+        profession: normalizeProfession(profession),
+        "preferences.preferredWholesalers": preferredWholesalers,
       });
       Alert.alert("Sparat", "Din profil har uppdaterats.");
     } catch (e) { Alert.alert("Fel", "Kunde inte spara profil."); }
@@ -122,6 +125,25 @@ export default function ProfileScreen({ navigation }) {
       { text: "Avbryt", style: "cancel" },
       { text: "Logga ut", style: "destructive", onPress: () => signOut(auth) }
     ]);
+  };
+
+  const toggleWholesaler = (wholesalerId) => {
+    setPreferredWholesalers((prev) => {
+      if (prev.includes(wholesalerId)) return prev.filter((x) => x !== wholesalerId);
+      return [...prev, wholesalerId];
+    });
+  };
+
+  const movePreferredWholesaler = (index, direction) => {
+    setPreferredWholesalers((prev) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= prev.length) return prev;
+      const copy = [...prev];
+      const tmp = copy[index];
+      copy[index] = copy[nextIndex];
+      copy[nextIndex] = tmp;
+      return copy;
+    });
   };
 
   return (
@@ -224,6 +246,74 @@ export default function ProfileScreen({ navigation }) {
                   onChangeText={setPhone}
                   keyboardType="phone-pad"
                 />
+              </View>
+              <View>
+                <Text style={styles.fieldLabel}>Yrke</Text>
+                <View style={styles.professionRow}>
+                  {PROFESSION_OPTIONS.map((opt) => {
+                    const active = normalizeProfession(profession) === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[styles.professionChip, active && styles.professionChipActive]}
+                        onPress={() => setProfession(opt.key)}
+                      >
+                        <Text style={[styles.professionChipText, active && styles.professionChipTextActive]}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+              <View>
+                <Text style={styles.fieldLabel}>Valbara grossister</Text>
+                <Text style={styles.hintText}>
+                  Om inga väljs används standard för ditt yrke.
+                </Text>
+                <View style={styles.professionRow}>
+                  {ALL_WHOLESALERS.map((ws) => {
+                    const active = preferredWholesalers.includes(ws.id);
+                    return (
+                      <TouchableOpacity
+                        key={ws.id}
+                        style={[styles.professionChip, active && styles.professionChipActive]}
+                        onPress={() => toggleWholesaler(ws.id)}
+                      >
+                        <Ionicons
+                          name={active ? "checkmark-circle" : "ellipse-outline"}
+                          size={14}
+                          color={active ? "#FFF" : "#64748B"}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text style={[styles.professionChipText, active && styles.professionChipTextActive]}>
+                          {ws.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {preferredWholesalers.length > 0 ? (
+                  <View style={{ marginTop: 10, gap: 6 }}>
+                    {preferredWholesalers.map((id, index) => {
+                      const ws = ALL_WHOLESALERS.find((x) => x.id === id);
+                      if (!ws) return null;
+                      return (
+                        <View key={id} style={styles.sortRow}>
+                          <Text style={styles.sortLabel}>{ws.name}</Text>
+                          <View style={{ flexDirection: "row", gap: 8 }}>
+                            <TouchableOpacity onPress={() => movePreferredWholesaler(index, -1)}>
+                              <Ionicons name="chevron-up" size={18} color="#64748B" />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => movePreferredWholesaler(index, 1)}>
+                              <Ionicons name="chevron-down" size={18} color="#64748B" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : null}
               </View>
             </View>
           </View>
@@ -348,6 +438,35 @@ const styles = StyleSheet.create({
   readOnlyText: { marginLeft: 10, color: "#334155", fontWeight: "700", flex: 1 },
   inputWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: "#F2F2F7", borderRadius: 12, paddingHorizontal: 12, marginBottom: 10 },
   input: { flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 15, fontWeight: "600", color: "#333" },
+  fieldLabel: { fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 8, marginTop: 2 },
+  hintText: { fontSize: 11, color: "#94A3B8", marginBottom: 8, fontWeight: "600" },
+  professionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  professionChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+  },
+  professionChipActive: {
+    borderColor: WorkaholicTheme.colors.primary,
+    backgroundColor: WorkaholicTheme.colors.primary,
+  },
+  professionChipText: { fontSize: 12, fontWeight: "700", color: "#334155" },
+  professionChipTextActive: { color: "#FFF" },
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  sortLabel: { fontSize: 12, fontWeight: "700", color: "#334155" },
   settingsRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F9FB', padding: 15, borderRadius: 15 },
   settingsIconBox: { width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(0, 122, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
   settingsLabel: { fontSize: 15, fontWeight: '700', color: '#1C1C1E' },

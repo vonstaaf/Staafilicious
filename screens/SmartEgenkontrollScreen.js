@@ -116,15 +116,12 @@ export default function SmartEgenkontrollScreen({ navigation, route }) {
   };
 
   const handleSignature = async (sig) => {
-    console.log("[SmartEgenkontroll] handleSignature");
     await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     setSignModalVisible(false);
     if (!companyId || !groupId || !project) {
-      console.error("[SmartEgenkontroll] Saknar companyId/groupId/project");
       return;
     }
     if (!auth.currentUser) {
-      console.error("[SmartEgenkontroll] Ingen inloggad användare");
       Alert.alert("Session", "Du är inte inloggad. Logga in och försök igen.");
       return;
     }
@@ -132,7 +129,6 @@ export default function SmartEgenkontrollScreen({ navigation, route }) {
     const raw = typeof sig === "string" ? sig.trim() : "";
     const base64Part = raw.includes("base64,") ? raw.split("base64,")[1] : raw.replace(/^data:image\/\w+;base64,/, "");
     if (!base64Part || base64Part.length < 80) {
-      console.error("[SmartEgenkontroll] Tom eller för kort signatur, längd:", base64Part?.length ?? 0);
       Alert.alert("Signatur saknas", "Rita en tydlig signatur och försök igen.");
       return;
     }
@@ -140,14 +136,12 @@ export default function SmartEgenkontrollScreen({ navigation, route }) {
     let fullSig = raw.startsWith("data:") ? raw : `data:image/png;base64,${raw}`;
     try {
       fullSig = await rotateSignatureForPortrait(fullSig);
-      console.log("[SmartEgenkontroll] Signatur roterad, längd:", fullSig?.length ?? 0);
-    } catch (rotErr) {
-      console.error("[SmartEgenkontroll] rotateSignatureForPortrait:", rotErr);
+    } catch {
+      /* behåll oförändrad */
     }
 
     setIsProcessing(true);
     try {
-      console.log("[SmartEgenkontroll] addDoc till companies/.../documents");
       await addDoc(collection(db, "companies", companyId, "groups", groupId, "documents"), {
         type: "smart_inspection",
         projectName: capitalizeFirst(project.name),
@@ -164,7 +158,6 @@ export default function SmartEgenkontrollScreen({ navigation, route }) {
         { text: "OK", onPress: () => navigation.goBack() },
       ]);
     } catch (e) {
-      console.error("[SmartEgenkontroll] addDoc misslyckades:", e?.code, e?.message, e);
       Alert.alert("Kunde inte spara", e?.message || "Försök igen.");
     } finally {
       setIsProcessing(false);

@@ -24,7 +24,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
 import { capitalizeFirst } from "../utils/stringHelpers";
 import { searchProducts } from "../utils/productSearch";
-import { getWholesalersForProfession } from "../constants/wholesalers";
+import { resolveWholesalersForUser } from "../constants/wholesalers";
 import AppHeader from "../components/AppHeader";
 import { WorkaholicTheme } from "../theme";
 
@@ -203,7 +203,11 @@ export default function ProductsScreen({ navigation, route }) {
   const [zoomImage, setZoomImage] = useState(null); 
   
   const [profession, setProfession] = useState("");
-  const visibleWholesalers = useMemo(() => getWholesalersForProfession(profession), [profession]);
+  const [preferredWholesalers, setPreferredWholesalers] = useState([]);
+  const visibleWholesalers = useMemo(
+    () => resolveWholesalersForUser(profession, preferredWholesalers),
+    [profession, preferredWholesalers]
+  );
   const firstWholesalerId = visibleWholesalers[0]?.id;
   const [selectedWholesaler, setSelectedWholesaler] = useState("rexel");
 
@@ -213,8 +217,12 @@ export default function ProductsScreen({ navigation, route }) {
       if (!user) return;
       try {
         const snap = await getDoc(doc(db, "users", user.uid));
-        if (snap.exists() && snap.data().profession != null) {
-          setProfession(snap.data().profession);
+        if (snap.exists()) {
+          const d = snap.data();
+          if (d.profession != null) setProfession(d.profession);
+          if (Array.isArray(d?.preferences?.preferredWholesalers)) {
+            setPreferredWholesalers(d.preferences.preferredWholesalers);
+          }
         }
       } catch (e) {
         console.error(e);

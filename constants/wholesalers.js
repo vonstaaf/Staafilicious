@@ -22,6 +22,8 @@ export const WHOLESALERS = [
   { id: "xlbygg", name: "XL-Bygg", icon: "resize-outline", professions: ["bygg"] },
 ];
 
+export const ALL_WHOLESALERS = WHOLESALERS;
+
 /** Rabattgrupper per yrke – används i rabattbrev-modalen och produktpriser. */
 export const DISCOUNT_GROUPS_BY_PROFESSION = {
   el: [
@@ -98,6 +100,23 @@ export function getWholesalersForProfession(profession) {
   const keys = getProfessionKeys(profession);
   if (keys.length === 0) return [];
   return WHOLESALERS.filter((ws) => ws.professions.some((p) => keys.includes(p)));
+}
+
+/**
+ * Prioriterar användarens egna grossistval.
+ * Om listan är tom/ogiltig faller vi tillbaka till professionens standard.
+ * @param {string} profession
+ * @param {string[]} preferredWholesalerIds
+ */
+export function resolveWholesalersForUser(profession, preferredWholesalerIds) {
+  if (Array.isArray(preferredWholesalerIds) && preferredWholesalerIds.length > 0) {
+    const byId = new Map(WHOLESALERS.map((w) => [w.id, w]));
+    const picked = preferredWholesalerIds
+      .map((id) => byId.get(String(id)))
+      .filter(Boolean);
+    if (picked.length > 0) return picked;
+  }
+  return getWholesalersForProfession(profession);
 }
 
 /**

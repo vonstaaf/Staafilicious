@@ -18,8 +18,7 @@ export async function rotateSignatureForPortrait(dataUri) {
       format: ImageManipulator.SaveFormat.PNG,
     });
     return result.base64 ? `data:image/png;base64,${result.base64}` : uri;
-  } catch (err) {
-    console.error("[signatureHelpers] rotateSignatureForPortrait:", err?.message || err);
+  } catch {
     return uri;
   }
 }
