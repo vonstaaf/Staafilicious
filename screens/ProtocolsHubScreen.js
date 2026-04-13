@@ -50,6 +50,15 @@ const TNS_TEMPLATE = [
   { id: 'tns_s5', section: '3. Kontroll (Satt)', label: 'Förimpedans (Zför)', desc: 'Notera uppmätt eller beräknat värde.', unit: 'Ohm' },
 ];
 
+const RISK_ANALYSIS_TEMPLATE = [
+  { id: "risk_1", section: "Före arbete", label: "Arbetsmiljö genomgång", desc: "Har teamet gått igenom arbetsmoment och ansvar innan start?", unit: "" },
+  { id: "risk_2", section: "Före arbete", label: "Risker identifierade", desc: "Finns fallrisk, elrisk, heta arbeten eller annan risk dokumenterad?", unit: "" },
+  { id: "risk_3", section: "Före arbete", label: "Skyddsutrustning", desc: "Är rätt PPE vald och tillgänglig för alla i arbetslaget?", unit: "" },
+  { id: "risk_4", section: "Före arbete", label: "Avspärrning & skyltning", desc: "Behövs avspärrning eller varningsskyltar innan arbete påbörjas?", unit: "" },
+  { id: "risk_5", section: "Före arbete", label: "Tillstånd & samordning", desc: "Är nödvändiga tillstånd klara och samordning med andra yrkesgrupper bekräftad?", unit: "" },
+  { id: "risk_6", section: "Före arbete", label: "Nödläge & kontaktvägar", desc: "Är larmvägar, första hjälpen och kontaktpersoner kända av montören?", unit: "" },
+];
+
 export default function ProtocolsHubScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -93,7 +102,7 @@ export default function ProtocolsHubScreen({ route, navigation }) {
     });
   };
 
-  const ProtocolCard = ({ title, sub, icon, color, onPress, disabled }) => (
+  const ProtocolCard = ({ title, sub, icon, color, onPress, disabled, badgeText, badgeStyle }) => (
     <TouchableOpacity 
       style={[styles.card, { backgroundColor: theme.colors.surface, opacity: disabled ? 0.6 : 1 }]} 
       onPress={disabled ? () => Alert.alert("Info", "Denna funktion är inte tillgänglig än.") : onPress}
@@ -103,7 +112,14 @@ export default function ProtocolsHubScreen({ route, navigation }) {
         <Ionicons name={icon} size={28} color="#FFF" />
       </View>
       <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{title}</Text>
+        <View style={styles.cardTitleRow}>
+          <Text style={styles.cardTitle}>{title}</Text>
+          {badgeText ? (
+            <View style={[styles.cardBadge, badgeStyle]}>
+              <Text style={styles.cardBadgeText}>{badgeText}</Text>
+            </View>
+          ) : null}
+        </View>
         <Text style={styles.cardSub}>{sub}</Text>
       </View>
       <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
@@ -132,6 +148,18 @@ export default function ProtocolsHubScreen({ route, navigation }) {
         }}
       >
         <Text style={styles.sectionLabel}>TILLGÄNGLIGA KONTROLLER</Text>
+
+        {(isEl || isBygg || isRormokare) && (
+          <ProtocolCard
+            title="RISKANALYS (FÖRE ARBETE)"
+            sub="Snabb riskbedömning innan start i projektet"
+            icon="alert-circle-outline"
+            color="#D97706"
+            badgeText="OBLIGATORISK · FÖRE START"
+            badgeStyle={styles.riskBadge}
+            onPress={() => startProtocol("RISKANALYS (FÖRE ARBETE)", RISK_ANALYSIS_TEMPLATE)}
+          />
+        )}
         
         {/* --- EL: Allmän / Golvvärme egenkontroll --- */}
         {isEl && (
@@ -298,7 +326,22 @@ const styles = StyleSheet.create({
   },
   iconBox: { width: 50, height: 50, borderRadius: 10, justifyContent: "center", alignItems: "center", marginRight: 15 },
   cardContent: { flex: 1 },
+  cardTitleRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
   cardTitle: { ...WorkaholicTheme.typography.subtitle },
   cardSub: { ...WorkaholicTheme.typography.body, fontSize: 12, marginTop: 2 },
+  cardBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  cardBadgeText: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+    color: "#111827",
+  },
+  riskBadge: {
+    backgroundColor: "#FDE68A",
+  },
   divider: { height: 1, backgroundColor: "#EEE", marginVertical: 10 }
 });
