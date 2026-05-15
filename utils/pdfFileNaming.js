@@ -38,8 +38,20 @@ export function buildPdfFileName(documentType, projectName) {
   return generateSafeFileName(projectName, documentType);
 }
 
+export function buildGroupScheduleFileName(projectName) {
+  const prettyProject = formatProjectName(projectName, SAFE_FALLBACK_NAME);
+  const safeProject = compactSafeToken(prettyProject, "Projekt");
+  return `${safeProject}_Gruppförteckning.pdf`;
+}
+
 export async function prepareNamedPdfUri(tempUri, documentType, projectName) {
   const finalFileName = generateSafeFileName(projectName, documentType);
+  const targetUri = `${FileSystem.cacheDirectory}${Date.now()}-${finalFileName}`;
+  await FileSystem.copyAsync({ from: tempUri, to: targetUri });
+  return { finalFileName, uri: targetUri };
+}
+
+export async function prepareCustomNamedPdfUri(tempUri, finalFileName) {
   const targetUri = `${FileSystem.cacheDirectory}${Date.now()}-${finalFileName}`;
   await FileSystem.copyAsync({ from: tempUri, to: targetUri });
   return { finalFileName, uri: targetUri };

@@ -7,10 +7,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ProjectsContext } from "../context/ProjectsContext";
+import { CompanyContext } from "../context/CompanyContext";
 import { capitalizeFirst } from "../utils/stringHelpers";
 import { WorkaholicTheme } from "../theme";
-import { db, auth } from "../firebaseConfig";
-import { doc, onSnapshot } from "firebase/firestore";
 import { handleGroupSchedulePdf } from "../utils/pdfActions";
 import AppHeader from "../components/AppHeader";
 
@@ -62,28 +61,34 @@ const ScheduleHeader = React.memo(({
         </View>
       </View>
 
-      <View style={styles.inputRow}>
-        <View style={styles.halfInput}>
-          <Text style={styles.label}>Ik3 (kA)</Text>
-          <TextInput 
-            style={styles.headerInput} 
-            value={headerInfo.ik3} 
-            placeholder="t.ex. 6" 
-            placeholderTextColor="#CCC" 
-            onChangeText={v => setHeaderInfo({...headerInfo, ik3: v})} 
-          />
+      {(headerInfo.showIk3 || headerInfo.showZfor) ? (
+        <View style={styles.inputRow}>
+          {headerInfo.showIk3 ? (
+            <View style={styles.halfInput}>
+              <Text style={styles.label}>Ik3 (kA)</Text>
+              <TextInput
+                style={styles.headerInput}
+                value={headerInfo.ik3}
+                placeholder="t.ex. 6"
+                placeholderTextColor="#CCC"
+                onChangeText={v => setHeaderInfo({...headerInfo, ik3: v})}
+              />
+            </View>
+          ) : null}
+          {headerInfo.showZfor ? (
+            <View style={styles.halfInput}>
+              <Text style={styles.label}>Zför (Ω)</Text>
+              <TextInput
+                style={styles.headerInput}
+                value={headerInfo.zfor}
+                placeholder="t.ex. 0.45"
+                placeholderTextColor="#CCC"
+                onChangeText={v => setHeaderInfo({...headerInfo, zfor: v})}
+              />
+            </View>
+          ) : null}
         </View>
-        <View style={styles.halfInput}>
-          <Text style={styles.label}>Zför (Ω)</Text>
-          <TextInput 
-            style={styles.headerInput} 
-            value={headerInfo.zfor} 
-            placeholder="t.ex. 0.45" 
-            placeholderTextColor="#CCC" 
-            onChangeText={v => setHeaderInfo({...headerInfo, zfor: v})} 
-          />
-        </View>
-      </View>
+      ) : null}
 
       <View style={styles.separator} />
 
@@ -125,6 +130,33 @@ const ScheduleHeader = React.memo(({
       </Text>
 
       <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Visa Ik3</Text>
+        <Switch
+          value={headerInfo.showIk3}
+          onValueChange={(v) => setHeaderInfo({ ...headerInfo, showIk3: v })}
+          trackColor={{ false: "#EEE", true: WorkaholicTheme.colors.primary }}
+          thumbColor="#FFF"
+        />
+      </View>
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Visa Zför</Text>
+        <Switch
+          value={headerInfo.showZfor}
+          onValueChange={(v) => setHeaderInfo({ ...headerInfo, showZfor: v })}
+          trackColor={{ false: "#EEE", true: WorkaholicTheme.colors.primary }}
+          thumbColor="#FFF"
+        />
+      </View>
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Använd Plejd-koder</Text>
+        <Switch
+          value={headerInfo.usePlejdCodes}
+          onValueChange={(v) => setHeaderInfo({ ...headerInfo, usePlejdCodes: v })}
+          trackColor={{ false: "#EEE", true: WorkaholicTheme.colors.primary }}
+          thumbColor="#FFF"
+        />
+      </View>
+      <View style={styles.switchRow}>
         <Text style={styles.switchLabel}>Visa text om Jordfelsbrytare på PDF</Text>
         <Switch 
           value={showJfbText}
@@ -140,60 +172,108 @@ const ScheduleHeader = React.memo(({
 // 🔑 NY INTERN KOMPONENT: RAD-KOMPONENT (Fixar fokus-bugg i listan)
 const ScheduleRow = React.memo(({ 
   item, index, totalRows, handleLabelChange, copyLabelToNext, 
-  openPicker, copyValuesToNext 
+  openPicker, copyValuesToNext, handlePlejdCodeChange, usePlejdCodes
 }) => {
   return (
     <View style={styles.rowCard}>
-      <View style={styles.numBadge}>
-        <Text style={styles.numText}>{item.id}</Text>
+      <View style={styles.rowTop}>
+        <View style={styles.numBadge}>
+          <Text style={styles.numText}>{item.id}</Text>
+        </View>
+        
+        <TextInput 
+          style={styles.input} 
+          placeholder="Beskrivning..." 
+          placeholderTextColor="#CCC"
+          value={item.label} 
+          onChangeText={(v) => handleLabelChange(v, item.id)} 
+        />
+        
+        {index < totalRows - 1 && (
+          <TouchableOpacity style={styles.copyBtn} onPress={() => copyLabelToNext(index)}>
+            <Ionicons name="arrow-down-circle-outline" size={20} color="#DDD" />
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.pickerArea}>
+          <TouchableOpacity style={styles.pickerTrigger} onPress={() => openPicker(item.id, 'current')}>
+            <Text style={styles.pickerValue}>
+              {item.current ? (item.current === 'N' ? 'N' : `${item.current}A`) : 'Amp'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.pickerTrigger} onPress={() => openPicker(item.id, 'area')}>
+            <Text style={styles.pickerValue}>
+              {item.area ? `${item.area}mm²` : 'Area'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {index < totalRows - 1 && (
+          <TouchableOpacity style={styles.copyBtn} onPress={() => copyValuesToNext(index)}>
+            <Ionicons name="arrow-down-circle-outline" size={20} color={WorkaholicTheme.colors.primary + '40'} />
+          </TouchableOpacity>
+        )}
       </View>
       
-      <TextInput 
-        style={styles.input} 
-        placeholder="Beskrivning..." 
-        placeholderTextColor="#CCC"
-        value={item.label} 
-        onChangeText={(v) => handleLabelChange(v, item.id)} 
-      />
-      
-      {index < totalRows - 1 && (
-        <TouchableOpacity style={styles.copyBtn} onPress={() => copyLabelToNext(index)}>
-          <Ionicons name="arrow-down-circle-outline" size={20} color="#DDD" />
-        </TouchableOpacity>
-      )}
-
-      <View style={styles.pickerArea}>
-        <TouchableOpacity style={styles.pickerTrigger} onPress={() => openPicker(item.id, 'current')}>
-          <Text style={styles.pickerValue}>
-            {item.current ? (item.current === 'N' ? 'N' : `${item.current}A`) : 'Amp'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.pickerTrigger} onPress={() => openPicker(item.id, 'area')}>
-          <Text style={styles.pickerValue}>
-            {item.area ? `${item.area}mm²` : 'Area'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {index < totalRows - 1 && (
-        <TouchableOpacity style={styles.copyBtn} onPress={() => copyValuesToNext(index)}>
-          <Ionicons name="arrow-down-circle-outline" size={20} color={WorkaholicTheme.colors.primary + '40'} />
-        </TouchableOpacity>
-      )}
+      {usePlejdCodes ? (
+        <View style={styles.plejdRow}>
+          <TextInput
+            style={styles.plejdInput}
+            placeholder="Plejd-kod..."
+            placeholderTextColor="#CCC"
+            value={item.plejdSystemCode || ""}
+            onChangeText={(v) => handlePlejdCodeChange(v, item.id)}
+          />
+          <TouchableOpacity
+            style={styles.plejdPickerBtn}
+            onPress={() => openPicker(item.id, "plejdSystemCode")}
+          >
+            <Ionicons name="list-outline" size={16} color={WorkaholicTheme.colors.primary} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </View>
   );
 });
 
+const normalizeRows = (inputRows, fallbackCount = 12) => {
+  const src = Array.isArray(inputRows) ? inputRows : [];
+  if (src.length === 0) {
+    return Array.from({ length: fallbackCount }, (_, i) => ({
+      id: String(i + 1),
+      label: "",
+      current: "",
+      area: "",
+      plejdSystemCode: "",
+    }));
+  }
+  return src.map((row, i) => ({
+    id: String(row?.id ?? i + 1),
+    label: String(row?.label || ""),
+    current: String(row?.current || ""),
+    area: String(row?.area || ""),
+    plejdSystemCode: String(row?.plejdSystemCode || ""),
+  }));
+};
+
 export default function GroupScheduleScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { selectedProject, updateProject } = useContext(ProjectsContext);
+  const { company } = useContext(CompanyContext) || {};
   
   const [loadingPdf, setLoadingPdf] = useState(false);
-  const [companyData, setCompanyData] = useState(null);
   
-  const [headerInfo, setHeaderInfo] = useState({ 
-    anlaggning: "", central: "", skring: "", kabel: "", ik3: "", zfor: ""
+  const [headerInfo, setHeaderInfo] = useState({
+    anlaggning: "",
+    central: "",
+    skring: "",
+    kabel: "",
+    ik3: "",
+    zfor: "",
+    showIk3: true,
+    showZfor: true,
+    usePlejdCodes: true,
   });
   const [showJfbText, setShowJfbText] = useState(false);
   const [pageSize, setPageSize] = useState("A4");
@@ -205,47 +285,52 @@ export default function GroupScheduleScreen({ navigation }) {
 
   const AMPERE_VALUES = ["", "N", "6", "10", "13", "16", "20", "25", "32", "35", "40", "50", "63"];
   const AREA_VALUES = ["", "1,5", "2,5", "4", "6", "10", "16"];
-
-  useEffect(() => {
-    if (!auth.currentUser) return;
-    const unsubscribe = onSnapshot(doc(db, "users", auth.currentUser.uid), (docSnap) => {
-      if (docSnap.exists()) setCompanyData(docSnap.data());
-    });
-    return () => unsubscribe();
-  }, []);
+  const PLEJD_CODE_VALUES = ["", "CTR-01", "DIM-01", "DIM-02", "REL-01", "WPH-01", "WRT-01"];
 
   useEffect(() => {
     if (selectedProject?.groupScheduleHeader) {
+      const normalizedRows = normalizeRows(selectedProject.groupScheduleRows);
       setHeaderInfo({
         anlaggning: selectedProject.groupScheduleHeader.anlaggning || selectedProject.name || "",
         central: selectedProject.groupScheduleHeader.central || "",
         skring: selectedProject.groupScheduleHeader.skring || "",
         kabel: selectedProject.groupScheduleHeader.kabel || "",
         ik3: selectedProject.groupScheduleHeader.ik3 || "",
-        zfor: selectedProject.groupScheduleHeader.zfor || ""
+        zfor: selectedProject.groupScheduleHeader.zfor || "",
+        showIk3: selectedProject.groupScheduleHeader.showIk3 !== false,
+        showZfor: selectedProject.groupScheduleHeader.showZfor !== false,
+        usePlejdCodes:
+          typeof selectedProject.groupScheduleHeader.usePlejdCodes === "boolean"
+            ? selectedProject.groupScheduleHeader.usePlejdCodes
+            : normalizedRows.some((r) => Boolean(r.plejdSystemCode)),
       });
       setShowJfbText(selectedProject.groupScheduleHeader.showJfbText || false);
-      setRows(selectedProject.groupScheduleRows || []);
-      setModuleCountInput(String(selectedProject.groupScheduleRows?.length || "12"));
+      setRows(normalizedRows);
+      setModuleCountInput(String(normalizedRows.length || "12"));
     } else if (selectedProject?.groupSchedule) {
       const gs = selectedProject.groupSchedule;
+      const normalizedRows = normalizeRows(gs.rows);
       setHeaderInfo({
         anlaggning: gs.headerInfo?.anlaggning || selectedProject.name || "",
         central: gs.headerInfo?.central || "",
         skring: gs.headerInfo?.skring || "",
         kabel: gs.headerInfo?.kabel || "",
         ik3: gs.headerInfo?.ik3 || "",
-        zfor: gs.headerInfo?.zfor || ""
+        zfor: gs.headerInfo?.zfor || "",
+        showIk3: gs.headerInfo?.showIk3 !== false,
+        showZfor: gs.headerInfo?.showZfor !== false,
+        usePlejdCodes:
+          typeof gs.headerInfo?.usePlejdCodes === "boolean"
+            ? gs.headerInfo.usePlejdCodes
+            : normalizedRows.some((r) => Boolean(r.plejdSystemCode)),
       });
       setShowJfbText(gs.headerInfo?.showJfbText || false);
       setPageSize(gs.pageSize || "A4");
-      setModuleCountInput(String(gs.moduleCount || gs.rows?.length || "12"));
-      setRows(gs.rows || []);
+      setModuleCountInput(String(gs.moduleCount || normalizedRows.length || "12"));
+      setRows(normalizedRows);
     } else {
       setHeaderInfo(s => ({ ...s, anlaggning: selectedProject?.name || "" }));
-      const initialRows = Array.from({ length: 12 }, (_, i) => ({ 
-        id: (i + 1).toString(), label: "", current: "", area: "" 
-      }));
+      const initialRows = normalizeRows([], 12);
       setRows(initialRows);
     }
   }, [selectedProject]);
@@ -255,7 +340,7 @@ export default function GroupScheduleScreen({ navigation }) {
       { text: "Avbryt", style: "cancel" },
       { text: "Ja, rensa", style: "destructive", onPress: () => {
           setModuleCountInput("12");
-          setRows(Array.from({ length: 12 }, (_, i) => ({ id: (i + 1).toString(), label: "", current: "", area: "" })));
+          setRows(normalizeRows([], 12));
       }}
     ]);
   }, []);
@@ -277,6 +362,7 @@ export default function GroupScheduleScreen({ navigation }) {
         label: "",
         current: "",
         area: "",
+        plejdSystemCode: "",
       }));
       return [...prev, ...extra];
     });
@@ -296,6 +382,10 @@ export default function GroupScheduleScreen({ navigation }) {
   const handleLabelChange = useCallback((text, id) => {
     const formatted = capitalizeFirst(text) || text;
     setRows(prevRows => prevRows.map(r => r.id === id ? {...r, label: formatted} : r));
+  }, []);
+
+  const handlePlejdCodeChange = useCallback((text, id) => {
+    setRows((prevRows) => prevRows.map((r) => (r.id === id ? { ...r, plejdSystemCode: text } : r)));
   }, []);
 
   const copyLabelToNext = useCallback((index) => {
@@ -337,7 +427,7 @@ export default function GroupScheduleScreen({ navigation }) {
     const saveOk = await saveSchedule(true);
     if (!saveOk) { setLoadingPdf(false); return; }
     try {
-      await handleGroupSchedulePdf(selectedProject, { rows, headerInfo: { ...headerInfo, showJfbText }, pageSize }, companyData);
+      await handleGroupSchedulePdf(selectedProject, { rows, headerInfo: { ...headerInfo, showJfbText }, pageSize }, company || {});
     } catch (e) { Alert.alert("Fel", "Kunde inte skapa PDF."); } 
     finally { setLoadingPdf(false); }
   };
@@ -386,6 +476,8 @@ export default function GroupScheduleScreen({ navigation }) {
               copyLabelToNext={copyLabelToNext}
               openPicker={openPicker}
               copyValuesToNext={copyValuesToNext}
+              handlePlejdCodeChange={handlePlejdCodeChange}
+              usePlejdCodes={headerInfo.usePlejdCodes}
             />
           )}
         />
@@ -402,12 +494,25 @@ export default function GroupScheduleScreen({ navigation }) {
       <Modal visible={pickerVisible} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setPickerVisible(false)}>
           <View style={styles.pickerContent}>
-            <Text style={styles.pickerTitle}>VÄLJ {activePicker.type === 'current' ? 'SÄKRING' : 'AREA'}</Text>
+            <Text style={styles.pickerTitle}>
+              VÄLJ {activePicker.type === 'current' ? 'SÄKRING' : activePicker.type === "area" ? 'AREA' : 'PLEJD-KOD'}
+            </Text>
             <ScrollView showsVerticalScrollIndicator={false}>
-              {(activePicker.type === 'current' ? AMPERE_VALUES : AREA_VALUES).map(val => (
+              {(activePicker.type === 'current'
+                ? AMPERE_VALUES
+                : activePicker.type === "area"
+                ? AREA_VALUES
+                : PLEJD_CODE_VALUES
+              ).map(val => (
                 <TouchableOpacity key={val || 'blank'} style={styles.pickerItem} onPress={() => selectValue(val)}>
                   <Text style={styles.pickerItemText}>
-                    {val === "" ? "Blankt" : (val === 'N' ? 'N' : `${val} ${activePicker.type === 'current' ? 'A' : 'mm²'}`)}
+                    {val === ""
+                      ? "Blankt"
+                      : activePicker.type === "current"
+                      ? (val === 'N' ? 'N' : `${val} A`)
+                      : activePicker.type === "area"
+                      ? `${val} mm²`
+                      : val}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -439,7 +544,8 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: 12, fontWeight: '700', color: '#666', flex: 1 },
   moduleHint: { fontSize: 11, fontWeight: '600', color: '#888', marginTop: 12, lineHeight: 16 },
 
-  rowCard: { flexDirection: "row", marginHorizontal: 20, marginBottom: 10, borderRadius: 20, padding: 12, alignItems: "center", backgroundColor: '#FFF', elevation: 2, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 5 },
+  rowCard: { marginHorizontal: 20, marginBottom: 10, borderRadius: 20, padding: 12, backgroundColor: '#FFF', elevation: 2, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 5 },
+  rowTop: { flexDirection: "row", alignItems: "center" },
   numBadge: { width: 30, height: 30, borderRadius: 10, backgroundColor: '#F0F7FF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   numText: { fontSize: 12, fontWeight: "900", color: WorkaholicTheme.colors.primary },
   input: { flex: 1, fontSize: 14, fontWeight: '700', color: '#1C1C1E' },
@@ -447,6 +553,9 @@ const styles = StyleSheet.create({
   pickerArea: { flexDirection: 'row', gap: 6, marginLeft: 10 },
   pickerTrigger: { backgroundColor: '#F5F5F7', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, minWidth: 50, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#EEE' },
   pickerValue: { fontWeight: '800', color: '#555', fontSize: 10 },
+  plejdRow: { marginTop: 10, flexDirection: "row", alignItems: "center", gap: 8 },
+  plejdInput: { flex: 1, backgroundColor: "#F8F9FB", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12, fontWeight: "700", color: "#1C1C1E" },
+  plejdPickerBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#F0F7FF", alignItems: "center", justifyContent: "center" },
   
   footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', padding: 15, borderTopWidth: 1, borderColor: '#EEE' },
   saveBtn: { backgroundColor: '#1C1C1E', padding: 18, borderRadius: 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },

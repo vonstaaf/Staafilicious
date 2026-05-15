@@ -3,7 +3,8 @@ import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBase64Image } from '../imageHelpers';
 import { logError } from "../logger";
-import { prepareNamedPdfUri } from "../pdfFileNaming";
+import { buildGroupScheduleFileName, prepareCustomNamedPdfUri } from "../pdfFileNaming";
+import { formatProjectName } from "../stringHelpers";
 
 const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
 
@@ -42,6 +43,11 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
     const cName = company.companyName || company.name || "";
     const rows = scheduleData.rows || [];
     const header = scheduleData.headerInfo || {};
+    const hasIk3 = header.showIk3 !== false && String(header.ik3 || "").trim().length > 0;
+    const hasZfor = header.showZfor !== false && String(header.zfor || "").trim().length > 0;
+    const hasPlejdCode =
+      header.usePlejdCodes !== false &&
+      rows.some((r) => String(r?.plejdSystemCode || "").trim().length > 0);
     const showJfb = header.showJfbText || false;
     const pageSize = scheduleData.pageSize || "A4";
     const isA5 = pageSize === "A5";
@@ -51,8 +57,6 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
     
     const NORMAL_MAX = NORMAL_ROWS_PER_COL * 2;
     const JFB_MAX = JFB_ROWS_PER_COL * 2;
-    const rowHeight = isA5 ? 24 : 19; 
-
     const pages = [];
     let remainingRows = [...rows];
     if (remainingRows.length === 0) remainingRows.push({ id: "", label: "", current: "", area: "" });
@@ -125,7 +129,7 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
             
             /* 🔑 MAFFIGARE LOGGA */
             .logo-img { 
-              max-height: ${isA5 ? '75px' : '95px'}; 
+              max-height: ${isA5 ? '70px' : '90px'}; 
               width: auto; 
               display: block; 
               max-width: 100%;
@@ -134,7 +138,7 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
 
             /* 🔑 STÖRRE FÖRETAGSINFO */
             .company-info {
-              text-align: right;
+              text-align: center;
               font-size: ${isA5 ? '10px' : '12px'};
               line-height: 1.3;
               color: #1C1C1E;
@@ -149,11 +153,14 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
               border: 1px solid #000; 
               font-size: ${isA5 ? '11px' : '11px'}; 
               padding: 4px; 
-              overflow: hidden;
-              white-space: nowrap;
-              text-overflow: ellipsis;
+              white-space: normal;
+              word-break: break-word;
+              overflow-wrap: anywhere;
+              vertical-align: top;
             }
             .data-table th { background: #f2f2f2; font-weight: bold; text-align: center; font-size: 10px; }
+            .meta-row { display: flex; gap: 10px; margin: 0 0 8px 0; }
+            .meta-pill { border: 1px solid #000; padding: 4px 8px; font-size: 10px; font-weight: bold; border-radius: 4px; }
 
             .jfb-container {
               margin-top: 15px;
@@ -189,24 +196,20 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                 
                 <table class="header-table" style="margin-bottom: 10px;">
                   <tr>
-                    <td style="width: 30%;">
-                      ${appLogo ? `<img src="${appLogo}" style="height: 90px; opacity: 1;" />` : ""}
-                    </td>
-                    <td style="width: 40%; text-align: center;">
-                      ${companyLogo ? `<img src="${companyLogo}" class="logo-img" style="margin: 0 auto;"/>` : `<strong style="font-size: 18px;">${cName}</strong>`}
-                    </td>
-                    <td style="width: 30%;" class="company-info">
-                      <div class="company-title">${cName}</div>
-                      ${company.orgNr ? `Org.nr: ${company.orgNr}<br/>` : ""}
-                      ${company.address || ""}<br/>
-                      ${company.phone || ""}<br/>
-                      ${company.website || ""}
+                    <td style="text-align: center;">
+                      ${companyLogo ? `<img src="${companyLogo}" class="logo-img" style="margin: 0 auto;"/>` : ""}
+                      ${!companyLogo && appLogo ? `<img src="${appLogo}" class="logo-img" style="margin: 0 auto;"/>` : ""}
+                      <div class="company-info" style="margin-top: 6px;">
+                        <div class="company-title">${cName || formatProjectName(project?.name, "Projekt")}</div>
+                        ${company.orgNr ? `Org.nr: ${company.orgNr}<br/>` : ""}
+                        ${company.phone || ""}
+                      </div>
                     </td>
                   </tr>
                 </table>
 
                 <h2 style="font-size: ${isA5 ? '16px' : '20px'}; margin: 5px 0 10px 0; text-align:center; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 5px;">
-                  Projektförteckning - ${project.name}
+                  Gruppförteckning
                 </h2>
                 
                 <table class="data-table" style="margin-bottom: 10px;">
@@ -218,29 +221,34 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                     <td><strong>Huvudsäkring:</strong> ${header.skring || "-"}</td>
                     <td><strong>Matning:</strong> ${header.kabel || "-"}</td>
                   </tr>
-                  <tr>
-                    <td><strong>Ik3:</strong> ${header.ik3 || "-"} kA</td>
-                    <td><strong>Zför:</strong> ${header.zfor || "-"} Ω</td>
-                  </tr>
                 </table>
+
+                ${(hasIk3 || hasZfor) ? `
+                  <div class="meta-row">
+                    ${hasIk3 ? `<div class="meta-pill">Ik3: ${header.ik3} kA</div>` : ""}
+                    ${hasZfor ? `<div class="meta-pill">Zför: ${header.zfor} Ω</div>` : ""}
+                  </div>
+                ` : ""}
 
                 <div style="display: flex; justify-content: space-between;">
                   <table class="data-table" style="width: 49.6%;">
                     <thead>
                       <tr>
                         <th style="width: 14%;">Nr</th>
-                        <th style="width: 56%;">Omfattning / Projekt</th>
+                        <th style="width: ${hasPlejdCode ? '44%' : '56%'};">Omfattning / Projekt</th>
                         <th style="width: 15%;">A</th>
                         <th style="width: 15%;">mm²</th>
+                        ${hasPlejdCode ? '<th style="width: 12%;">Plejds systemkod</th>' : ""}
                       </tr>
                     </thead>
                     <tbody>
                       ${left.map(r => `
-                        <tr style="height: ${rowHeight}px;">
+                        <tr>
                           <td style="text-align:center; font-weight:bold;">${r.id}</td>
                           <td style="font-weight:bold;">${r.label}</td>
                           <td style="text-align:center;">${r.current}</td>
                           <td style="text-align:center;">${r.area}</td>
+                          ${hasPlejdCode ? `<td style="text-align:center;">${r.plejdSystemCode || ""}</td>` : ""}
                         </tr>`).join('')}
                     </tbody>
                   </table>
@@ -249,18 +257,20 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                     <thead>
                       <tr>
                         <th style="width: 14%;">Nr</th>
-                        <th style="width: 56%;">Omfattning / Projekt</th>
+                        <th style="width: ${hasPlejdCode ? '44%' : '56%'};">Omfattning / Projekt</th>
                         <th style="width: 15%;">A</th>
                         <th style="width: 15%;">mm²</th>
+                        ${hasPlejdCode ? '<th style="width: 12%;">Plejds systemkod</th>' : ""}
                       </tr>
                     </thead>
                     <tbody>
                       ${right.map(r => `
-                        <tr style="height: ${rowHeight}px;">
+                        <tr>
                           <td style="text-align:center; font-weight:bold;">${r.id}</td>
                           <td style="font-weight:bold;">${r.label}</td>
                           <td style="text-align:center;">${r.current}</td>
                           <td style="text-align:center;">${r.area}</td>
+                          ${hasPlejdCode ? `<td style="text-align:center;">${r.plejdSystemCode || ""}</td>` : ""}
                         </tr>`).join('')}
                     </tbody>
                   </table>
@@ -283,7 +293,8 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
     `;
 
     const { uri } = await Print.printToFileAsync({ html: htmlContent });
-    const { uri: newUri, finalFileName } = await prepareNamedPdfUri(uri, "Gruppschema", project?.name);
+    const finalName = buildGroupScheduleFileName(project?.name);
+    const { uri: newUri, finalFileName } = await prepareCustomNamedPdfUri(uri, finalName);
     await Sharing.shareAsync(newUri, {
       UTI: '.pdf',
       mimeType: 'application/pdf',

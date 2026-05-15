@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useCallback, useRef } from "react";
 import { View, Text, Modal, TouchableOpacity, StyleSheet, Dimensions, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import SignatureScreen from "react-native-signature-canvas";
@@ -15,15 +15,38 @@ const WEB_STYLE = `
   canvas { touch-action: none; width: 100% !important; height: 100% !important; }
 `;
 
-export default function SignModal({ visible, onClose, onSignature, onEmpty, title = "Signera kontroll", buttonText = "SLUTFÖR & ARKIVERA" }) {
+function SignModal({ visible, onClose, onSignature, onEmpty, title = "Signera kontroll", buttonText = "SLUTFÖR & ARKIVERA" }) {
   const signatureRef = useRef();
+  const isReadingRef = useRef(false);
 
-  const handleEmpty = () => {
+  const handleEmpty = useCallback(() => {
+    isReadingRef.current = false;
     if (typeof onEmpty === "function") {
       onEmpty();
       return;
     }
     Alert.alert("Signatur saknas", "Rita med fingret innan du bekräftar.");
+  }, [onEmpty]);
+
+  const handleOk = useCallback(
+    (sig) => {
+      isReadingRef.current = false;
+      if (typeof onSignature === "function") onSignature(sig);
+    },
+    [onSignature]
+  );
+
+  const handleReadSignature = useCallback(() => {
+    if (isReadingRef.current) return;
+    isReadingRef.current = true;
+    signatureRef.current?.readSignature();
+  }, []);
+
+  const webviewProps = {
+    scrollEnabled: false,
+    bounces: false,
+    nestedScrollEnabled: false,
+    androidLayerType: "hardware",
   };
 
   return (
@@ -38,7 +61,7 @@ export default function SignModal({ visible, onClose, onSignature, onEmpty, titl
         <View style={[styles.canvasWrap, { height: SIGNATURE_HEIGHT }]}>
           <SignatureScreen
             ref={signatureRef}
-            onOK={onSignature}
+            onOK={handleOk}
             onEmpty={handleEmpty}
             descriptionText="Signera här"
             autoClear={false}
@@ -47,12 +70,15 @@ export default function SignModal({ visible, onClose, onSignature, onEmpty, titl
             backgroundColor="rgba(255,255,255,1)"
             style={styles.canvas}
             webStyle={WEB_STYLE}
+            scrollable={false}
+            nestedScrollEnabled={false}
+            webviewProps={webviewProps}
           />
         </View>
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={() => signatureRef.current?.readSignature()}
+            onPress={handleReadSignature}
           >
             <Text style={styles.btnText}>{buttonText}</Text>
           </TouchableOpacity>
@@ -61,6 +87,8 @@ export default function SignModal({ visible, onClose, onSignature, onEmpty, titl
     </Modal>
   );
 }
+
+export default React.memo(SignModal);
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
