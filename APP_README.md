@@ -28,3 +28,16 @@ Innan du gör en större ändring i hur data sparas:
 
 Fortsätt alltid använda `companyId` i alla queries.
 Om data sparas utan `companyId` riskerar den att bli osynlig i admin-portalen.
+
+## Android Permissions (Google Play Console)
+- `android.permission.ACCESS_COARSE_LOCATION`
+- `android.permission.ACCESS_FINE_LOCATION`
+- `android.permission.CAMERA`
+- `android.permission.FOREGROUND_SERVICE`
+- `android.permission.INTERNET`
+- `android.permission.READ_EXTERNAL_STORAGE`
+- `android.permission.READ_MEDIA_IMAGES`
+- `android.permission.RECORD_AUDIO`
+- `android.permission.SYSTEM_ALERT_WINDOW`
+- `android.permission.VIBRATE`
+- `android.permission.WRITE_EXTERNAL_STORAGE`
