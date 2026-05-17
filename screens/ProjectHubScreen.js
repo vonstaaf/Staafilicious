@@ -33,6 +33,14 @@ export default function ProjectHubScreen({ navigation, route }) {
 
   const TILES = [
     {
+      id: 'ata',
+      title: 'ÄTA-HANTERING',
+      sub: 'Ändringar, tillägg & avgående',
+      icon: 'document-lock-outline',
+      color: '#FFCC00',
+      screen: 'AtaManagement'
+    },
+    {
       id: 'aiWorkOrder',
       title: 'AI ARBETSORDER',
       sub: 'Fritext → tid & material',

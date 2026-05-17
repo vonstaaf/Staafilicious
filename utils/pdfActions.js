@@ -6,6 +6,7 @@ import { handleCustomerPdf } from "./pdfModels/CustomerPdf";
 import { handleMaterialPdf } from "./pdfModels/MaterialPdf";
 import { handleInspectionPdf } from "./pdfModels/InspectionPdf";
 import { handleSakerVattenIntygPdf } from "./pdfModels/SakerVattenIntygPdf";
+import { handleAtaPdf } from "./pdfModels/AtaPdf";
 
 /**
  * Denna fil fungerar som en central växel för alla PDF-funktioner.
@@ -18,6 +19,7 @@ export {
   handleMaterialPdf,
   handleInspectionPdf,
   handleSakerVattenIntygPdf,
+  handleAtaPdf,
 };
 
 /**

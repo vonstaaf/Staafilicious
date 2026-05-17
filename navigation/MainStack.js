@@ -24,6 +24,7 @@ import BarcodeScanScreen from "../screens/BarcodeScanScreen";
 import RelationsritningScreen from "../screens/RelationsritningScreen";
 import VarningScreen from "../screens/VarningScreen";
 import AiWorkOrderScreen from "../screens/AiWorkOrderScreen";
+import AtaManagementScreen from "../screens/AtaManagementScreen";
 
 // Skärmar (System & Profil)
 import SettingsScreen from "../screens/SettingsScreen";
@@ -68,6 +69,7 @@ export default function MainStack() {
       <Stack.Screen name="Relationsritning" component={RelationsritningScreen} />
       <Stack.Screen name="Varning" component={VarningScreen} />
       <Stack.Screen name="AiWorkOrder" component={AiWorkOrderScreen} />
+      <Stack.Screen name="AtaManagement" component={AtaManagementScreen} />
       
       {/* 6. SYSTEM & PROFIL */}
       <Stack.Screen 

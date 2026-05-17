@@ -44,6 +44,13 @@ export function buildGroupScheduleFileName(projectName) {
   return `${safeProject}_Centralförteckning.pdf`;
 }
 
+export function buildAtaSpecificationFileName(projectName, ataTitle) {
+  const prettyProject = formatProjectName(projectName, SAFE_FALLBACK_NAME);
+  const safeProject = compactSafeToken(prettyProject, "Projekt");
+  const safeAta = compactSafeToken(ataTitle || "AtaSpecifikation", "AtaSpecifikation");
+  return `${safeProject}-${safeAta}-AtaSpecifikation.pdf`;
+}
+
 export async function prepareNamedPdfUri(tempUri, documentType, projectName) {
   const finalFileName = generateSafeFileName(projectName, documentType);
   const targetUri = `${FileSystem.cacheDirectory}${Date.now()}-${finalFileName}`;
