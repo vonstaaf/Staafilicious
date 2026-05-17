@@ -45,9 +45,7 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
     const header = scheduleData.headerInfo || {};
     const hasIk3 = header.showIk3 !== false && String(header.ik3 || "").trim().length > 0;
     const hasZfor = header.showZfor !== false && String(header.zfor || "").trim().length > 0;
-    const hasPlejdCode =
-      header.usePlejdCodes !== false &&
-      rows.some((r) => String(r?.plejdSystemCode || "").trim().length > 0);
+    const hasPlejdCode = header.usePlejdCodes !== false && String(header.plejdCode || "").trim().length > 0;
     const showJfb = header.showJfbText || false;
     const pageSize = scheduleData.pageSize || "A4";
     const isA5 = pageSize === "A5";
@@ -209,7 +207,7 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                 </table>
 
                 <h2 style="font-size: ${isA5 ? '16px' : '20px'}; margin: 5px 0 10px 0; text-align:center; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 5px;">
-                  Gruppförteckning
+                  Centralförteckning
                 </h2>
                 
                 <table class="data-table" style="margin-bottom: 10px;">
@@ -223,10 +221,11 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                   </tr>
                 </table>
 
-                ${(hasIk3 || hasZfor) ? `
+                ${(hasIk3 || hasZfor || hasPlejdCode) ? `
                   <div class="meta-row">
                     ${hasIk3 ? `<div class="meta-pill">Ik3: ${header.ik3} kA</div>` : ""}
                     ${hasZfor ? `<div class="meta-pill">Zför: ${header.zfor} Ω</div>` : ""}
+                    ${hasPlejdCode ? `<div class="meta-pill">Plejd-kod: ${header.plejdCode}</div>` : ""}
                   </div>
                 ` : ""}
 
@@ -235,10 +234,9 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                     <thead>
                       <tr>
                         <th style="width: 14%;">Nr</th>
-                        <th style="width: ${hasPlejdCode ? '44%' : '56%'};">Omfattning / Projekt</th>
+                        <th style="width: 56%;">Omfattning / Projekt</th>
                         <th style="width: 15%;">A</th>
                         <th style="width: 15%;">mm²</th>
-                        ${hasPlejdCode ? '<th style="width: 12%;">Plejds systemkod</th>' : ""}
                       </tr>
                     </thead>
                     <tbody>
@@ -248,7 +246,6 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                           <td style="font-weight:bold;">${r.label}</td>
                           <td style="text-align:center;">${r.current}</td>
                           <td style="text-align:center;">${r.area}</td>
-                          ${hasPlejdCode ? `<td style="text-align:center;">${r.plejdSystemCode || ""}</td>` : ""}
                         </tr>`).join('')}
                     </tbody>
                   </table>
@@ -257,10 +254,9 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                     <thead>
                       <tr>
                         <th style="width: 14%;">Nr</th>
-                        <th style="width: ${hasPlejdCode ? '44%' : '56%'};">Omfattning / Projekt</th>
+                        <th style="width: 56%;">Omfattning / Projekt</th>
                         <th style="width: 15%;">A</th>
                         <th style="width: 15%;">mm²</th>
-                        ${hasPlejdCode ? '<th style="width: 12%;">Plejds systemkod</th>' : ""}
                       </tr>
                     </thead>
                     <tbody>
@@ -270,7 +266,6 @@ export const handleGroupSchedulePdf = async (project, scheduleData, companyData)
                           <td style="font-weight:bold;">${r.label}</td>
                           <td style="text-align:center;">${r.current}</td>
                           <td style="text-align:center;">${r.area}</td>
-                          ${hasPlejdCode ? `<td style="text-align:center;">${r.plejdSystemCode || ""}</td>` : ""}
                         </tr>`).join('')}
                     </tbody>
                   </table>

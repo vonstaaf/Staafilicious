@@ -135,7 +135,7 @@ export const generateProjectPdf = async (project, companyData, logoUri) => {
 
           ${project.groups && project.groups.length > 0 ? `
             <div class="group-schedule-container">
-              <h2>Projektschema</h2>
+              <h2>Centralförteckning</h2>
               <table class="schedule-table">
                 <thead>
                   <tr>

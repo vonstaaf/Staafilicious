@@ -41,7 +41,7 @@ export function buildPdfFileName(documentType, projectName) {
 export function buildGroupScheduleFileName(projectName) {
   const prettyProject = formatProjectName(projectName, SAFE_FALLBACK_NAME);
   const safeProject = compactSafeToken(prettyProject, "Projekt");
-  return `${safeProject}_Gruppförteckning.pdf`;
+  return `${safeProject}_Centralförteckning.pdf`;
 }
 
 export async function prepareNamedPdfUri(tempUri, documentType, projectName) {

@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect, useCallback, useMemo } from "react";
+import React, { useContext, useState, useEffect, useCallback } from "react";
 import { 
   View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, 
   FlatList, KeyboardAvoidingView, Platform,
@@ -22,6 +22,22 @@ const ScheduleHeader = React.memo(({
   return (
     <View style={styles.headerCard}>
       <Text style={styles.sectionHeader}>ANLÄGGNINGSINFO</Text>
+
+      {headerInfo.usePlejdCodes ? (
+        <View style={styles.inputRow}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Plejd-kod</Text>
+            <TextInput
+              style={styles.headerInput}
+              value={headerInfo.plejdCode}
+              placeholder="t.ex. CTR-01"
+              placeholderTextColor="#CCC"
+              onChangeText={v => setHeaderInfo({ ...headerInfo, plejdCode: v })}
+            />
+          </View>
+          <View style={styles.halfInput} />
+        </View>
+      ) : null}
       
       <View style={styles.inputRow}>
         <View style={styles.halfInput}>
@@ -172,7 +188,7 @@ const ScheduleHeader = React.memo(({
 // 🔑 NY INTERN KOMPONENT: RAD-KOMPONENT (Fixar fokus-bugg i listan)
 const ScheduleRow = React.memo(({ 
   item, index, totalRows, handleLabelChange, copyLabelToNext, 
-  openPicker, copyValuesToNext, handlePlejdCodeChange, usePlejdCodes
+  openPicker, copyValuesToNext
 }) => {
   return (
     <View style={styles.rowCard}>
@@ -215,24 +231,6 @@ const ScheduleRow = React.memo(({
           </TouchableOpacity>
         )}
       </View>
-      
-      {usePlejdCodes ? (
-        <View style={styles.plejdRow}>
-          <TextInput
-            style={styles.plejdInput}
-            placeholder="Plejd-kod..."
-            placeholderTextColor="#CCC"
-            value={item.plejdSystemCode || ""}
-            onChangeText={(v) => handlePlejdCodeChange(v, item.id)}
-          />
-          <TouchableOpacity
-            style={styles.plejdPickerBtn}
-            onPress={() => openPicker(item.id, "plejdSystemCode")}
-          >
-            <Ionicons name="list-outline" size={16} color={WorkaholicTheme.colors.primary} />
-          </TouchableOpacity>
-        </View>
-      ) : null}
     </View>
   );
 });
@@ -245,7 +243,6 @@ const normalizeRows = (inputRows, fallbackCount = 12) => {
       label: "",
       current: "",
       area: "",
-      plejdSystemCode: "",
     }));
   }
   return src.map((row, i) => ({
@@ -253,7 +250,6 @@ const normalizeRows = (inputRows, fallbackCount = 12) => {
     label: String(row?.label || ""),
     current: String(row?.current || ""),
     area: String(row?.area || ""),
-    plejdSystemCode: String(row?.plejdSystemCode || ""),
   }));
 };
 
@@ -271,6 +267,7 @@ export default function GroupScheduleScreen({ navigation }) {
     kabel: "",
     ik3: "",
     zfor: "",
+    plejdCode: "",
     showIk3: true,
     showZfor: true,
     usePlejdCodes: true,
@@ -285,11 +282,12 @@ export default function GroupScheduleScreen({ navigation }) {
 
   const AMPERE_VALUES = ["", "N", "6", "10", "13", "16", "20", "25", "32", "35", "40", "50", "63"];
   const AREA_VALUES = ["", "1,5", "2,5", "4", "6", "10", "16"];
-  const PLEJD_CODE_VALUES = ["", "CTR-01", "DIM-01", "DIM-02", "REL-01", "WPH-01", "WRT-01"];
 
   useEffect(() => {
     if (selectedProject?.groupScheduleHeader) {
-      const normalizedRows = normalizeRows(selectedProject.groupScheduleRows);
+      const legacyRows = Array.isArray(selectedProject.groupScheduleRows) ? selectedProject.groupScheduleRows : [];
+      const normalizedRows = normalizeRows(legacyRows);
+      const legacyPlejdCode = legacyRows.find((r) => String(r?.plejdSystemCode || "").trim().length > 0)?.plejdSystemCode || "";
       setHeaderInfo({
         anlaggning: selectedProject.groupScheduleHeader.anlaggning || selectedProject.name || "",
         central: selectedProject.groupScheduleHeader.central || "",
@@ -297,19 +295,22 @@ export default function GroupScheduleScreen({ navigation }) {
         kabel: selectedProject.groupScheduleHeader.kabel || "",
         ik3: selectedProject.groupScheduleHeader.ik3 || "",
         zfor: selectedProject.groupScheduleHeader.zfor || "",
+        plejdCode: selectedProject.groupScheduleHeader.plejdCode || legacyPlejdCode,
         showIk3: selectedProject.groupScheduleHeader.showIk3 !== false,
         showZfor: selectedProject.groupScheduleHeader.showZfor !== false,
         usePlejdCodes:
           typeof selectedProject.groupScheduleHeader.usePlejdCodes === "boolean"
             ? selectedProject.groupScheduleHeader.usePlejdCodes
-            : normalizedRows.some((r) => Boolean(r.plejdSystemCode)),
+            : legacyRows.some((r) => Boolean(r?.plejdSystemCode)),
       });
       setShowJfbText(selectedProject.groupScheduleHeader.showJfbText || false);
       setRows(normalizedRows);
       setModuleCountInput(String(normalizedRows.length || "12"));
     } else if (selectedProject?.groupSchedule) {
       const gs = selectedProject.groupSchedule;
-      const normalizedRows = normalizeRows(gs.rows);
+      const legacyRows = Array.isArray(gs.rows) ? gs.rows : [];
+      const normalizedRows = normalizeRows(legacyRows);
+      const legacyPlejdCode = legacyRows.find((r) => String(r?.plejdSystemCode || "").trim().length > 0)?.plejdSystemCode || "";
       setHeaderInfo({
         anlaggning: gs.headerInfo?.anlaggning || selectedProject.name || "",
         central: gs.headerInfo?.central || "",
@@ -317,12 +318,13 @@ export default function GroupScheduleScreen({ navigation }) {
         kabel: gs.headerInfo?.kabel || "",
         ik3: gs.headerInfo?.ik3 || "",
         zfor: gs.headerInfo?.zfor || "",
+        plejdCode: gs.headerInfo?.plejdCode || legacyPlejdCode,
         showIk3: gs.headerInfo?.showIk3 !== false,
         showZfor: gs.headerInfo?.showZfor !== false,
         usePlejdCodes:
           typeof gs.headerInfo?.usePlejdCodes === "boolean"
             ? gs.headerInfo.usePlejdCodes
-            : normalizedRows.some((r) => Boolean(r.plejdSystemCode)),
+            : legacyRows.some((r) => Boolean(r?.plejdSystemCode)),
       });
       setShowJfbText(gs.headerInfo?.showJfbText || false);
       setPageSize(gs.pageSize || "A4");
@@ -362,7 +364,6 @@ export default function GroupScheduleScreen({ navigation }) {
         label: "",
         current: "",
         area: "",
-        plejdSystemCode: "",
       }));
       return [...prev, ...extra];
     });
@@ -384,10 +385,6 @@ export default function GroupScheduleScreen({ navigation }) {
     setRows(prevRows => prevRows.map(r => r.id === id ? {...r, label: formatted} : r));
   }, []);
 
-  const handlePlejdCodeChange = useCallback((text, id) => {
-    setRows((prevRows) => prevRows.map((r) => (r.id === id ? { ...r, plejdSystemCode: text } : r)));
-  }, []);
-
   const copyLabelToNext = useCallback((index) => {
     if (index >= rows.length - 1) return;
     const newRows = [...rows];
@@ -405,12 +402,19 @@ export default function GroupScheduleScreen({ navigation }) {
 
   const saveSchedule = async (silent = false) => {
     try {
+      const persistedRows = rows.map((row) => ({
+        id: String(row.id || ""),
+        label: String(row.label || ""),
+        current: String(row.current || ""),
+        area: String(row.area || ""),
+      }));
+      const headerPayload = { ...headerInfo, showJfbText };
       await updateProject(selectedProject.id, {
-        groupScheduleRows: rows,
-        groupScheduleHeader: { ...headerInfo, showJfbText },
+        groupScheduleRows: persistedRows,
+        groupScheduleHeader: headerPayload,
         groupSchedule: { 
-          headerInfo: { ...headerInfo, showJfbText }, 
-          pageSize, moduleCount: rows.length, rows, updatedAt: new Date().toISOString() 
+          headerInfo: headerPayload, 
+          pageSize, moduleCount: persistedRows.length, rows: persistedRows, updatedAt: new Date().toISOString() 
         } 
       });
       if (!silent) Alert.alert("Sparat!");
@@ -439,7 +443,7 @@ export default function GroupScheduleScreen({ navigation }) {
       <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
       
       <AppHeader 
-        title="GRUPPSCHEMA"
+        title="CENTRALFÖRTECKNING"
         subTitle={selectedProject?.name?.toUpperCase()}
         navigation={navigation}
         rightIcon="share-outline"
@@ -476,8 +480,6 @@ export default function GroupScheduleScreen({ navigation }) {
               copyLabelToNext={copyLabelToNext}
               openPicker={openPicker}
               copyValuesToNext={copyValuesToNext}
-              handlePlejdCodeChange={handlePlejdCodeChange}
-              usePlejdCodes={headerInfo.usePlejdCodes}
             />
           )}
         />
@@ -486,7 +488,7 @@ export default function GroupScheduleScreen({ navigation }) {
       <View style={[styles.footer, { paddingBottom: insets.bottom + 15 }]}>
          <TouchableOpacity style={styles.saveBtn} onPress={() => saveSchedule(false)}>
             {loadingPdf ? <ActivityIndicator color="#FFF" /> : (
-              <><Ionicons name="save-outline" size={20} color="#FFF" /><Text style={styles.saveBtnText}>SPARA SCHEMA</Text></>
+              <><Ionicons name="save-outline" size={20} color="#FFF" /><Text style={styles.saveBtnText}>SPARA CENTRALFÖRTECKNING</Text></>
             )}
          </TouchableOpacity>
       </View>
@@ -495,14 +497,12 @@ export default function GroupScheduleScreen({ navigation }) {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setPickerVisible(false)}>
           <View style={styles.pickerContent}>
             <Text style={styles.pickerTitle}>
-              VÄLJ {activePicker.type === 'current' ? 'SÄKRING' : activePicker.type === "area" ? 'AREA' : 'PLEJD-KOD'}
+              VÄLJ {activePicker.type === 'current' ? 'SÄKRING' : 'AREA'}
             </Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               {(activePicker.type === 'current'
                 ? AMPERE_VALUES
-                : activePicker.type === "area"
-                ? AREA_VALUES
-                : PLEJD_CODE_VALUES
+                : AREA_VALUES
               ).map(val => (
                 <TouchableOpacity key={val || 'blank'} style={styles.pickerItem} onPress={() => selectValue(val)}>
                   <Text style={styles.pickerItemText}>
@@ -512,7 +512,7 @@ export default function GroupScheduleScreen({ navigation }) {
                       ? (val === 'N' ? 'N' : `${val} A`)
                       : activePicker.type === "area"
                       ? `${val} mm²`
-                      : val}
+                      : ""}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -553,9 +553,6 @@ const styles = StyleSheet.create({
   pickerArea: { flexDirection: 'row', gap: 6, marginLeft: 10 },
   pickerTrigger: { backgroundColor: '#F5F5F7', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, minWidth: 50, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#EEE' },
   pickerValue: { fontWeight: '800', color: '#555', fontSize: 10 },
-  plejdRow: { marginTop: 10, flexDirection: "row", alignItems: "center", gap: 8 },
-  plejdInput: { flex: 1, backgroundColor: "#F8F9FB", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12, fontWeight: "700", color: "#1C1C1E" },
-  plejdPickerBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#F0F7FF", alignItems: "center", justifyContent: "center" },
   
   footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', padding: 15, borderTopWidth: 1, borderColor: '#EEE' },
   saveBtn: { backgroundColor: '#1C1C1E', padding: 18, borderRadius: 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
