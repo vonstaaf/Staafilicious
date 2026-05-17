@@ -31,7 +31,7 @@ export default function ProjectHubScreen({ navigation, route }) {
 
   const formattedProjectName = capitalizeFirst(project.name);
 
-  const TILES = [
+  const GLOBAL_TILES = [
     {
       id: 'ata',
       title: 'ÄTA-HANTERING',
@@ -39,6 +39,14 @@ export default function ProjectHubScreen({ navigation, route }) {
       icon: 'document-lock-outline',
       color: '#FFCC00',
       screen: 'AtaManagement'
+    },
+    {
+      id: 'constructionLog',
+      title: 'BYGGDAGBOK',
+      sub: 'Projektlogg för alla yrkesgrupper',
+      icon: 'book-outline',
+      color: '#0A84FF',
+      screen: 'ConstructionLog'
     },
     {
       id: 'aiWorkOrder',
@@ -74,6 +82,25 @@ export default function ProjectHubScreen({ navigation, route }) {
     }
   ];
 
+  const BUILD_TILES = [
+    {
+      id: 'carpenterChecklist',
+      title: 'EGENKONTROLLER',
+      sub: 'Byggmallar & signerad kontroll',
+      icon: 'checkbox-outline',
+      color: '#34C759',
+      screen: 'CarpenterChecklist'
+    },
+    {
+      id: 'photoDocumentation',
+      title: 'FOTODOKUMENTATION',
+      sub: 'Dolt montage, fore/efter',
+      icon: 'images-outline',
+      color: '#FF3B30',
+      screen: 'PhotoDocumentation'
+    }
+  ];
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
@@ -84,18 +111,38 @@ export default function ProjectHubScreen({ navigation, route }) {
         navigation={navigation} 
       />
 
-      <ScrollView 
+      <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.sectionLabel}>VÄLJ KATEGORI</Text>
-        
+        <Text style={styles.sectionLabel}>GLOBALA FUNKTIONER</Text>
+
         <View style={styles.grid}>
-          {TILES.map((tile) => (
+          {GLOBAL_TILES.map((tile) => (
             <TouchableOpacity 
               key={tile.id} 
               style={styles.tile} 
+              onPress={() => navigation.navigate(tile.screen, { project })}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: tile.color + '15' }]}>
+                <Ionicons name={tile.icon} size={35} color={tile.color} />
+              </View>
+              <View style={styles.tileTextContainer}>
+                <Text style={styles.tileTitle}>{tile.title}</Text>
+                <Text style={styles.tileSubText}>{tile.sub}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#CCC" />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>BYGG / SNICKERI</Text>
+        <View style={styles.grid}>
+          {BUILD_TILES.map((tile) => (
+            <TouchableOpacity
+              key={tile.id}
+              style={styles.tile}
               onPress={() => navigation.navigate(tile.screen, { project })}
             >
               <View style={[styles.iconCircle, { backgroundColor: tile.color + '15' }]}>

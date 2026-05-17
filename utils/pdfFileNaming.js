@@ -51,6 +51,20 @@ export function buildAtaSpecificationFileName(projectName, ataTitle) {
   return `${safeProject}-${safeAta}-AtaSpecifikation.pdf`;
 }
 
+export function buildChecklistFileName(projectName, checklistTitle) {
+  const prettyProject = formatProjectName(projectName, SAFE_FALLBACK_NAME);
+  const safeProject = compactSafeToken(prettyProject, "Projekt");
+  const safeChecklist = compactSafeToken(checklistTitle || "Egenkontroll", "Egenkontroll");
+  return `${safeProject}-${safeChecklist}-Egenkontroll.pdf`;
+}
+
+export function buildConstructionLogFileName(projectName, mode = "all") {
+  const prettyProject = formatProjectName(projectName, SAFE_FALLBACK_NAME);
+  const safeProject = compactSafeToken(prettyProject, "Projekt");
+  const suffix = mode === "single" ? "Byggdagbok-Utdrag" : "Byggdagbok";
+  return `${safeProject}-${suffix}.pdf`;
+}
+
 export async function prepareNamedPdfUri(tempUri, documentType, projectName) {
   const finalFileName = generateSafeFileName(projectName, documentType);
   const targetUri = `${FileSystem.cacheDirectory}${Date.now()}-${finalFileName}`;

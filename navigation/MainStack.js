@@ -25,6 +25,9 @@ import RelationsritningScreen from "../screens/RelationsritningScreen";
 import VarningScreen from "../screens/VarningScreen";
 import AiWorkOrderScreen from "../screens/AiWorkOrderScreen";
 import AtaManagementScreen from "../screens/AtaManagementScreen";
+import CarpenterChecklistScreen from "../screens/CarpenterChecklistScreen";
+import PhotoDocumentationScreen from "../screens/PhotoDocumentationScreen";
+import ConstructionLogScreen from "../screens/ConstructionLogScreen";
 
 // Skärmar (System & Profil)
 import SettingsScreen from "../screens/SettingsScreen";
@@ -70,6 +73,9 @@ export default function MainStack() {
       <Stack.Screen name="Varning" component={VarningScreen} />
       <Stack.Screen name="AiWorkOrder" component={AiWorkOrderScreen} />
       <Stack.Screen name="AtaManagement" component={AtaManagementScreen} />
+      <Stack.Screen name="CarpenterChecklist" component={CarpenterChecklistScreen} />
+      <Stack.Screen name="PhotoDocumentation" component={PhotoDocumentationScreen} />
+      <Stack.Screen name="ConstructionLog" component={ConstructionLogScreen} />
       
       {/* 6. SYSTEM & PROFIL */}
       <Stack.Screen 

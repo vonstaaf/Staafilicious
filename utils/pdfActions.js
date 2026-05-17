@@ -7,6 +7,8 @@ import { handleMaterialPdf } from "./pdfModels/MaterialPdf";
 import { handleInspectionPdf } from "./pdfModels/InspectionPdf";
 import { handleSakerVattenIntygPdf } from "./pdfModels/SakerVattenIntygPdf";
 import { handleAtaPdf } from "./pdfModels/AtaPdf";
+import { handleChecklistPdf } from "./pdfModels/ChecklistPdf";
+import { handleConstructionLogPdf } from "./pdfModels/ConstructionLogPdf";
 
 /**
  * Denna fil fungerar som en central växel för alla PDF-funktioner.
@@ -20,6 +22,8 @@ export {
   handleInspectionPdf,
   handleSakerVattenIntygPdf,
   handleAtaPdf,
+  handleChecklistPdf,
+  handleConstructionLogPdf,
 };
 
 /**
