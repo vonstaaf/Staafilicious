@@ -12,6 +12,7 @@
     "build:web": "expo export",
     "version:increment": "node scripts/IncrementExpoBuild.js",
     "version:check": "node scripts/IncrementExpoBuild.js --dry-run",
+    "build:prod": "npm version patch --no-git-tag-version && node scripts/bump-version.js && eas build --platform android --profile production",
     "eas-build-pre-install": "mkdir -p android/app && echo \"$GOOGLE_SERVICES_JSON\" > android/app/google-services.json",
     "seed:license": "node scripts/seedLicense.js"
   },

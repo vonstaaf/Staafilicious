@@ -35,9 +35,11 @@
       "autoIncrement": true,
       "distribution": "store",
       "android": {
+        "autoIncrement": true,
         "buildType": "app-bundle"
       },
       "ios": {
+        "autoIncrement": true,
         "image": "latest"
       },
       "env": {

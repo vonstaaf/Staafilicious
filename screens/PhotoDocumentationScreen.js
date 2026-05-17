@@ -9,6 +9,7 @@ import {
   ScrollView,
   Image,
   Alert,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -63,17 +64,29 @@ export default function PhotoDocumentationScreen({ navigation, route }) {
   };
 
   const pickFromLibrary = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Behörighet saknas", "Tillåt bildbibliotek för att ladda upp foto.");
-      return;
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted" && Platform.OS !== "android") {
+        Alert.alert("Behörighet saknas", "Tillåt bildbibliotek för att ladda upp foto.");
+        return;
+      }
+    } catch (e) {
+      if (Platform.OS !== "android") {
+        Alert.alert("Behörighet saknas", "Tillåt bildbibliotek för att ladda upp foto.");
+        return;
+      }
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-    });
-    if (result.canceled || !result.assets?.[0]?.uri) return;
-    await savePhoto(result.assets[0].uri);
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      await savePhoto(result.assets[0].uri);
+    } catch (e) {
+      Alert.alert("Kunde inte öppna bildväljaren", "Försök igen eller använd kamera.");
+    }
   };
 
   const takePhoto = async () => {
