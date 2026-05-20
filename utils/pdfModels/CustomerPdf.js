@@ -6,7 +6,7 @@ import { getBase64Image } from '../imageHelpers';
 import { logError } from "../logger";
 import { prepareNamedPdfUri } from "../pdfFileNaming";
 
-const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
+import { APP_LOGO_URL } from "../pdfBranding";
 
 const formatNumber = (n) => {
   return Number(n).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");

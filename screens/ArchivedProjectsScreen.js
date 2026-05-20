@@ -6,7 +6,7 @@ import { WorkaholicTheme } from "../theme";
 import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../components/AppHeader"; 
 import { auth, db } from "../firebaseConfig";
-import { doc, onSnapshot } from "firebase/firestore";
+import { subscribeCompanyProfileForUser } from "../utils/companyProfile";
 
 // 🔑 NYA IMPORTER FÖR PDF (PUNKT 5)
 import { handleCustomerPdf } from "../utils/pdfActions";
@@ -23,11 +23,8 @@ export default function ArchivedProjectsScreen({ navigation }) {
   // HÄMTA FÖRETAGINFO FÖR PDF-HEADERN
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user) return;
-    const unsubscribe = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
-      if (docSnap.exists()) setCompanyData(docSnap.data());
-    });
-    return () => unsubscribe();
+    if (!user) return undefined;
+    return subscribeCompanyProfileForUser(db, user.uid, setCompanyData);
   }, []);
 
   const archivedProjects = projects.filter(p => p.isArchived || p.status === 'archived');

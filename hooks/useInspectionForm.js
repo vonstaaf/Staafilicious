@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useContext } from "react";
 import { Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ScreenOrientation from "expo-screen-orientation";
-import { doc, onSnapshot } from "firebase/firestore";
+import { subscribeCompanyProfileForUser } from "../utils/companyProfile";
 import { auth, db } from "../firebaseConfig";
 import { capitalizeFirst } from "../utils/stringHelpers";
 import { rotateSignatureForPortrait } from "../utils/signatureHelpers";
@@ -48,11 +48,8 @@ export function useInspectionForm(project, routeParams, updateProject, templates
 
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user) return;
-    const unsubscribe = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
-      if (docSnap.exists()) setCompanyData(docSnap.data());
-    });
-    return () => unsubscribe();
+    if (!user) return undefined;
+    return subscribeCompanyProfileForUser(db, user.uid, setCompanyData);
   }, []);
 
   const migrateLegacyImagesToByItem = (legacyArr, itemList) => {

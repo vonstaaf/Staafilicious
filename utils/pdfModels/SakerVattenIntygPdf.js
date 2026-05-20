@@ -5,7 +5,7 @@ import { getBase64Image } from "../imageHelpers";
 import { logError } from "../logger";
 import { prepareNamedPdfUri } from "../pdfFileNaming";
 
-const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
+import { APP_LOGO_URL } from "../pdfBranding";
 
 /**
  * Genererar Säker Vatten-intyg som PDF från senaste Smart egenkontroll (och valfritt tryckprov).

@@ -19,6 +19,7 @@ import {
 
 import { sendPushNotification } from "../utils/pushService";
 import { formatProjectName } from "../utils/stringHelpers";
+import { subscribeCompanyProfileForUser } from "../utils/companyProfile";
 
 export const ProjectsContext = createContext();
 
@@ -82,7 +83,8 @@ export const ProjectsProvider = ({ children }) => {
     let unsubscribeSnapshot = null;
     let unsubscribeProducts = null; 
     let unsubscribeDiscounts = null;
-    let unsubscribeTemplates = null; 
+    let unsubscribeTemplates = null;
+    let unsubscribeCompanyProfile = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user || null);
@@ -98,18 +100,17 @@ export const ProjectsProvider = ({ children }) => {
         if (unsubscribeProducts) unsubscribeProducts();
         if (unsubscribeDiscounts) unsubscribeDiscounts();
         if (unsubscribeTemplates) unsubscribeTemplates();
+        if (unsubscribeCompanyProfile) unsubscribeCompanyProfile();
         return;
       }
 
-      // 1. Hämta företagsdata
-      const userRef = doc(db, "users", user.uid);
-      getDoc(userRef).then((snap) => {
-         if(snap.exists()) {
-           setCompanyData(snap.data());
-           if(snap.data().logoUrl) {
-             AsyncStorage.setItem('@company_logo', snap.data().logoUrl);
-           }
-         }
+      unsubscribeCompanyProfile?.();
+      unsubscribeCompanyProfile = subscribeCompanyProfileForUser(db, user.uid, (profile) => {
+        setCompanyData(profile);
+        const logo = profile?.companyLogoUrl || profile?.logoUrl;
+        if (logo) {
+          AsyncStorage.setItem("@company_logo", logo).catch(() => {});
+        }
       });
 
       // 2. Lyssna på projekt
@@ -184,6 +185,7 @@ export const ProjectsProvider = ({ children }) => {
 
     return () => {
       unsubscribeAuth();
+      if (unsubscribeCompanyProfile) unsubscribeCompanyProfile();
       if (unsubscribeSnapshot) unsubscribeSnapshot();
       if (unsubscribeProducts) unsubscribeProducts();
       if (unsubscribeDiscounts) unsubscribeDiscounts();
@@ -222,15 +224,17 @@ export const ProjectsProvider = ({ children }) => {
     }
   };
 
-  const createProject = async (name, code) => {
+  const createProject = async (name, code, address) => {
     if (!auth.currentUser) throw new Error("Ingen användare");
     
     const formattedName = formatProjectName(name);
     const codeToUse = code ? code.toString().toUpperCase().trim() : generateProjectCode();
+    const addressTrimmed = typeof address === "string" ? address.trim() : "";
 
     const newProjectData = {
       name: formattedName,
       code: codeToUse,
+      address: addressTrimmed,
       owner: auth.currentUser.uid,
       members: [auth.currentUser.uid],
       status: "active",

@@ -6,7 +6,7 @@ import { logError } from "../logger";
 import { buildGroupScheduleFileName, prepareCustomNamedPdfUri } from "../pdfFileNaming";
 import { formatProjectName } from "../stringHelpers";
 
-const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
+import { APP_LOGO_URL } from "../pdfBranding";
 
 const JFB_TEXT = `
   <strong>JORDFELSBRYTARE</strong><br/>

@@ -17,7 +17,7 @@ import AppHeader from "../components/AppHeader";
 
 // 🔑 NYTT: Importera Firebase för att hämta företagsinfon
 import { auth, db } from "../firebaseConfig";
-import { doc, onSnapshot } from "firebase/firestore";
+import { subscribeCompanyProfileForUser } from "../utils/companyProfile";
 
 // 🔑 NYTT: Importera båda PDF-funktionerna
 import { handleCustomerPdf, handleMaterialPdf } from "../utils/pdfActions";
@@ -45,13 +45,8 @@ export default function SettlementScreen({ navigation, route }) {
   // 🔑 NYTT: Hämta företagsinfon och loggan i bakgrunden så de kan skickas till PDF:en
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user) return;
-    const unsubscribe = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
-      if (docSnap.exists()) {
-        setCompanyData(docSnap.data());
-      }
-    });
-    return () => unsubscribe();
+    if (!user) return undefined;
+    return subscribeCompanyProfileForUser(db, user.uid, setCompanyData);
   }, []);
 
   // --- EKONOMISKA BERÄKNINGAR ---

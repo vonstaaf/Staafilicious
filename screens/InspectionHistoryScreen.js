@@ -6,7 +6,7 @@ import { WorkaholicTheme } from "../theme";
 import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../components/AppHeader"; 
 import { auth, db } from "../firebaseConfig";
-import { doc, onSnapshot } from "firebase/firestore";
+import { subscribeCompanyProfileForUser } from "../utils/companyProfile";
 
 // 🔑 IMPORT (Använder nu den uppdaterade PDF-motorn)
 import { handleInspectionPdf } from "../utils/pdfActions";
@@ -26,11 +26,8 @@ export default function InspectionHistoryScreen({ navigation }) {
   // Hämta företaginfo live för PDF-headern
   useEffect(() => {
     const user = auth.currentUser;
-    if (!user) return;
-    const unsubscribe = onSnapshot(doc(db, "users", user.uid), (docSnap) => {
-      if (docSnap.exists()) setCompanyData(docSnap.data());
-    });
-    return () => unsubscribe();
+    if (!user) return undefined;
+    return subscribeCompanyProfileForUser(db, user.uid, setCompanyData);
   }, []);
 
   // SKYDD OM INGET PROJEKT ÄR VALT

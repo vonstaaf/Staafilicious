@@ -5,7 +5,7 @@ import { getBase64Image } from "../imageHelpers";
 import { logError } from "../logger";
 import { buildAtaSpecificationFileName, prepareCustomNamedPdfUri } from "../pdfFileNaming";
 
-const APP_LOGO_URL = "https://raw.githubusercontent.com/vonstaaf/Workaholic-assets/main/logo.png";
+import { APP_LOGO_URL } from "../pdfBranding";
 
 function formatDate(dateInput) {
   const d = new Date(dateInput || Date.now());
