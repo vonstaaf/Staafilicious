@@ -15,7 +15,16 @@ Vi använder EAS (Expo Application Services) för att generera produktionsbyggen
 * **Android:** `eas build --platform android`
 * **iOS:** `eas build --platform ios`
 
+## Webbportal (systerrepo)
+
+Server-API, företagsportal, uppdrag v2, geotagg och planeringskalender ligger i **`workaholic-web`**.
+
+Läs [workaholic-web README](https://github.com/vonstaaf/workaholic-web/blob/master/README.md) (eller lokalt: `../Hemmabygge/Workaholic/workaholic-web/README.md`) innan du ändrar saker som påverkar båda klienterna.
+
+Gemensam dokumentation: `workaholic-web/docs/SYSTEM_ARCHITECTURE.md` och `docs/SCHEMA.md`.
+
 ## Viktig arkitektur
 * **Databas:** Firestore (Kollektionen `groups` är hjärtat i appen).
 * **Tenant-isolering:** Sker via `companyId` i alla dokument.
-* **PDF-generering:** Sker lokalt i appen via `GroupSchedulePdf.js`.
+* **PDF-generering:** Sker lokalt i appen; Workaholic-logga hämtas från webbens branding-API (`/api/public/branding/workaholic-logo`).
+* **Företagsprofil:** Läs från `companies/{companyId}` — inte från `users/{uid}` (se `utils/companyProfile.js`).

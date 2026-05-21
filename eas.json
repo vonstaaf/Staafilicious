@@ -53,6 +53,9 @@
       "android": {
         "serviceAccountKeyPath": "./credentials.json",
         "track": "production"
+      },
+      "ios": {
+        "appleId": "fredrik.s@j2elteknik.se"
       }
     }
   }
