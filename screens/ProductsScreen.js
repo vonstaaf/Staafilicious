@@ -26,6 +26,7 @@ import { capitalizeFirst } from "../utils/stringHelpers";
 import { searchProducts } from "../utils/productSearch";
 import { resolveWholesalersForUser } from "../constants/wholesalers";
 import AppHeader from "../components/AppHeader";
+import RexelFastImportModal from "../components/RexelFastImportModal";
 import { WorkaholicTheme } from "../theme";
 
 // --- HJÄLPFUNKTIONER ---
@@ -78,6 +79,7 @@ const ProductsHeader = React.memo(({
   editingIndex, 
   setEditingIndex, 
   setIsModalVisible,
+  onOpenRexelImport,
   initialRowState
 }) => {
 
@@ -101,11 +103,19 @@ const ProductsHeader = React.memo(({
 
       <View style={styles.inputCard}>
         <View style={styles.cardHeader}>
-            <Text style={styles.sectionLabel}>{editingIndex !== null ? "REDIGERA ARTIKEL" : "SNABB-LÄGG TILL"}</Text>
-            <TouchableOpacity onPress={() => setIsModalVisible(true)} style={styles.searchLink}>
+            <View style={styles.cardHeaderTop}>
+              <Text style={styles.sectionLabel}>{editingIndex !== null ? "REDIGERA ARTIKEL" : "SNABB-LÄGG TILL"}</Text>
+            </View>
+            <View style={styles.headerLinksRow}>
+              <TouchableOpacity onPress={onOpenRexelImport} style={styles.searchLink}>
+                <Ionicons name="flash-outline" size={14} color={WorkaholicTheme.colors.primary} />
+                <Text style={styles.searchLinkText}>REXEL LISTA</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setIsModalVisible(true)} style={styles.searchLink}>
                 <Ionicons name="search" size={14} color={WorkaholicTheme.colors.primary} />
                 <Text style={styles.searchLinkText}>MATERIALSÖK</Text>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
         </View>
         
         <View style={styles.inputGroup}>
@@ -238,6 +248,7 @@ export default function ProductsScreen({ navigation, route }) {
   }, [firstWholesalerId, visibleWholesalers, selectedWholesaler]);
 
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isRexelImportVisible, setIsRexelImportVisible] = useState(false);
   const [modalSearchQuery, setModalSearchQuery] = useState("");
   const [modalResults, setModalResults] = useState([]);
   /** Valda artiklar med antal: [{ item, quantity }, ...] */
@@ -418,6 +429,7 @@ export default function ProductsScreen({ navigation, route }) {
               editingIndex={editingIndex}
               setEditingIndex={setEditingIndex}
               setIsModalVisible={setIsModalVisible}
+              onOpenRexelImport={() => setIsRexelImportVisible(true)}
               initialRowState={initialRowState}
             />
           }
@@ -498,6 +510,21 @@ export default function ProductsScreen({ navigation, route }) {
               
               <View style={{ width: 40 }} /> 
             </View>
+
+            {selectedWholesaler === "rexel" ? (
+              <TouchableOpacity
+                style={styles.rexelImportBanner}
+                onPress={() => {
+                  setIsModalVisible(false);
+                  setIsRexelImportVisible(true);
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="list-outline" size={18} color={WorkaholicTheme.colors.primary} />
+                <Text style={styles.rexelImportBannerText}>Snabbimport — klistra in E-nummerlista</Text>
+                <Ionicons name="chevron-forward" size={16} color="#CCC" />
+              </TouchableOpacity>
+            ) : null}
 
             <View style={styles.wholesalerContainer}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.wholesalerScroll}>
@@ -622,6 +649,12 @@ export default function ProductsScreen({ navigation, route }) {
             </View>
         </SafeAreaView>
       </Modal>
+
+      <RexelFastImportModal
+        visible={isRexelImportVisible}
+        onClose={() => setIsRexelImportVisible(false)}
+        projectId={project?.id}
+      />
     </View>
   );
 }
@@ -635,9 +668,30 @@ const styles = StyleSheet.create({
   badge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
   badgeText: { color: '#FFF', fontSize: 10, fontWeight: '900' },
   inputCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 25, marginBottom: 25, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  cardHeader: { marginBottom: 15, gap: 10 },
+  cardHeaderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerLinksRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' },
   sectionLabel: { fontSize: 10, fontWeight: "900", color: "#CCC", letterSpacing: 1 },
   searchLink: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F0F7FF', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 10 },
+  rexelImportBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 15,
+    marginBottom: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: '#F0F7FF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#D6E8FF',
+  },
+  rexelImportBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1C1C1E',
+  },
   searchLinkText: { fontSize: 10, fontWeight: '900', color: WorkaholicTheme.colors.primary },
   inputGroup: { marginBottom: 15 },
   inputRow: { flexDirection: "row", gap: 12, marginBottom: 15 },

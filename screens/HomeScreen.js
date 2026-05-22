@@ -33,6 +33,7 @@ export default function HomeScreen({ navigation }) {
   const { company } = useContext(CompanyContext) || {};
   
   const [projectName, setProjectName] = useState("");
+  const [projectAddress, setProjectAddress] = useState("");
   const [projectCode, setProjectCode] = useState("");
   const status = String(company?.subscriptionStatus || "").toLowerCase();
   const trialDaysLeft = getTrialDaysLeft(company);
@@ -49,6 +50,11 @@ export default function HomeScreen({ navigation }) {
     { key: "large", name: "Large", licenses: 25, monthlyPrice: 1750 },
   ];
 
+  const activeProjectAddress =
+    selectedProject && typeof selectedProject.address === "string"
+      ? selectedProject.address.trim()
+      : "";
+
   const handleCreate = async () => {
     const cleanedName = formatProjectName(projectName);
     if (cleanedName.length < 2) {
@@ -57,8 +63,9 @@ export default function HomeScreen({ navigation }) {
     try {
       // Skapar en unik kod för projektet
       const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-      await createProject(cleanedName, code);
+      await createProject(cleanedName, code, projectAddress);
       setProjectName("");
+      setProjectAddress("");
       Keyboard.dismiss();
       Alert.alert("Succé!", `Projektet "${cleanedName}" är nu skapat.`);
     } catch (error) { 
@@ -182,8 +189,28 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.projectName}>{selectedProject.name.toUpperCase()}</Text>
-            
+            <Text
+              style={[
+                styles.projectName,
+                { marginBottom: activeProjectAddress ? 8 : 20 },
+              ]}
+            >
+              {selectedProject.name.toUpperCase()}
+            </Text>
+
+            {activeProjectAddress ? (
+              <View style={styles.activeAddressRow}>
+                <Ionicons name="map-outline" size={14} color="#9CA3AF" style={styles.activeAddressIcon} />
+                <Text
+                  style={styles.activeAddressText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {activeProjectAddress}
+                </Text>
+              </View>
+            ) : null}
+
             <View style={styles.shortcutRow}>
               {/* Genväg till Egenkontroll - Mallväljaren triggas inuti InspectionScreen */}
               <TouchableOpacity 
@@ -228,6 +255,14 @@ export default function HomeScreen({ navigation }) {
               <Ionicons name="add" size={30} color="#FFF" />
             </TouchableOpacity>
           </View>
+          <Text style={styles.fieldLabel}>ARBETSPLATSADRESS</Text>
+          <TextInput
+            placeholder="Gata, postnummer ort..."
+            value={projectAddress}
+            onChangeText={setProjectAddress}
+            style={styles.addressInput}
+            placeholderTextColor="#BBB"
+          />
 
           <View style={styles.divider} />
 
@@ -278,7 +313,22 @@ const styles = StyleSheet.create({
   statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#34C759', marginRight: 6 },
   statusText: { fontSize: 9, fontWeight: '900', color: '#34C759' },
   changeText: { fontSize: 10, fontWeight: '800', color: '#BBB' },
-  projectName: { fontSize: 24, fontWeight: '900', color: '#1C1C1E', marginBottom: 20 },
+  projectName: { fontSize: 24, fontWeight: '900', color: '#1C1C1E' },
+  activeAddressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+    minWidth: 0,
+    gap: 8,
+  },
+  activeAddressIcon: { marginTop: 1 },
+  activeAddressText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#9CA3AF",
+  },
   shortcutRow: { flexDirection: 'row', gap: 10 },
   shortcutBtn: { flex: 1, backgroundColor: '#F8F9FB', padding: 15, borderRadius: 15, alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'center' },
   shortcutText: { fontSize: 12, fontWeight: '800', color: '#555' },
@@ -290,8 +340,18 @@ const styles = StyleSheet.create({
 
   card: { backgroundColor: '#FFF', padding: 25, borderRadius: 25, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, borderWidth: 1, borderColor: '#F0F0F0' },
   sectionLabel: { fontSize: 10, fontWeight: "900", color: "#CCC", letterSpacing: 1.2, marginBottom: 15 },
+  fieldLabel: { fontSize: 10, fontWeight: "800", color: "#AAA", letterSpacing: 0.8, marginTop: 14, marginBottom: 8 },
   inputRow: { flexDirection: 'row', gap: 10 },
   input: { flex: 1, backgroundColor: "#F5F5F7", padding: 16, borderRadius: 15, fontSize: 14, fontWeight: '700', color: '#1C1C1E' },
+  addressInput: {
+    backgroundColor: "#F5F5F7",
+    padding: 16,
+    borderRadius: 15,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1C1C1E",
+    minHeight: 48,
+  },
   addBtn: { width: 55, borderRadius: 15, justifyContent: "center", alignItems: "center", elevation: 2 },
   divider: { height: 1, backgroundColor: '#F8F9FB', marginVertical: 25 },
   infoFooter: { textAlign: 'center', fontSize: 10, color: '#DDD', fontWeight: '800', marginTop: 30, letterSpacing: 1 },

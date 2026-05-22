@@ -33,6 +33,7 @@ export default function ProjectListScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState(""); 
   const [activeMenuProject, setActiveMenuProject] = useState(null);
   const [projectNameInput, setProjectNameInput] = useState("");
+  const [projectAddressInput, setProjectAddressInput] = useState("");
 
   // --- FILTRERING ---
   const filteredProjects = useMemo(() => {
@@ -51,6 +52,9 @@ export default function ProjectListScreen({ navigation }) {
 
   const renderProjectItem = ({ item }) => {
     const isSelected = selectedProject?.id === item.id;
+    const addressLine =
+      typeof item.address === "string" && item.address.trim().length > 0 ? item.address.trim() : null;
+
     return (
       <TouchableOpacity 
         style={[styles.projectCard, isSelected && styles.selectedCard, isSelected && { backgroundColor: theme.colors.primary }]} 
@@ -71,6 +75,23 @@ export default function ProjectListScreen({ navigation }) {
                <Text style={styles.dot}>•</Text>
                <Text style={[styles.itemCount, isSelected && styles.selectedTextSub]}>{item.products?.length || 0} st</Text>
             </View>
+            {addressLine ? (
+              <View style={styles.cardAddressRow}>
+                <Ionicons
+                  name="map-outline"
+                  size={13}
+                  color={isSelected ? "rgba(255,255,255,0.75)" : "#9CA3AF"}
+                  style={styles.cardAddressIcon}
+                />
+                <Text
+                  style={[styles.cardAddressText, isSelected && styles.cardAddressTextSelected]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {addressLine}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
         
@@ -80,6 +101,7 @@ export default function ProjectListScreen({ navigation }) {
           onPress={() => { 
             setActiveMenuProject(item); 
             setProjectNameInput(item.name);
+            setProjectAddressInput(typeof item.address === "string" ? item.address : "");
             setOptionsVisible(true); 
           }}
         >
@@ -156,9 +178,13 @@ export default function ProjectListScreen({ navigation }) {
               <Text style={styles.menuOptionText}>Dela kod</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuOption} onPress={() => { setModalVisible(true); setOptionsVisible(false); }}>
+            <TouchableOpacity style={styles.menuOption} onPress={() => {
+              setProjectAddressInput(typeof activeMenuProject?.address === "string" ? activeMenuProject.address : "");
+              setModalVisible(true);
+              setOptionsVisible(false);
+            }}>
               <Ionicons name="create-outline" size={24} color="#444" />
-              <Text style={styles.menuOptionText}>Byt namn</Text>
+              <Text style={styles.menuOptionText}>Redigera projekt</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.menuOption} onPress={() => { archiveProject(activeMenuProject.id); setOptionsVisible(false); }}>
@@ -183,16 +209,37 @@ export default function ProjectListScreen({ navigation }) {
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.centerModalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>BYT NAMN</Text>
+            <Text style={styles.modalTitle}>REDIGERA PROJEKT</Text>
+            <Text style={styles.modalFieldLabel}>PROJEKTNAMN</Text>
             <TextInput 
               value={projectNameInput} 
               onChangeText={handleNameChange} 
               style={styles.modalInput} 
               autoFocus 
             />
+            <Text style={styles.modalFieldLabel}>ARBETSPLATSADRESS</Text>
+            <TextInput
+              value={projectAddressInput}
+              onChangeText={setProjectAddressInput}
+              style={styles.modalInput}
+              placeholder="Gata, postnummer ort..."
+              placeholderTextColor="#BBB"
+            />
             <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Button title="AVBRYT" type="secondary" style={{ flex: 1 }} onPress={() => {setModalVisible(false); setProjectNameInput("");}} />
-              <Button title="SPARA" type="primary" style={{ flex: 1 }} onPress={() => { updateProject(activeMenuProject.id, { name: projectNameInput }); setModalVisible(false); setProjectNameInput(""); }} />
+              <Button title="AVBRYT" type="secondary" style={{ flex: 1 }} onPress={() => {
+                setModalVisible(false);
+                setProjectNameInput("");
+                setProjectAddressInput("");
+              }} />
+              <Button title="SPARA" type="primary" style={{ flex: 1 }} onPress={() => {
+                updateProject(activeMenuProject.id, {
+                  name: projectNameInput,
+                  address: projectAddressInput.trim(),
+                });
+                setModalVisible(false);
+                setProjectNameInput("");
+                setProjectAddressInput("");
+              }} />
             </View>
           </View>
         </View>
@@ -244,6 +291,22 @@ const styles = StyleSheet.create({
   selectedText: { color: "#FFF" },
   selectedTextSub: { color: "rgba(255,255,255,0.7)" },
   badgeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  cardAddressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+    minWidth: 0,
+    alignSelf: "stretch",
+  },
+  cardAddressIcon: { marginTop: 1 },
+  cardAddressText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#9CA3AF",
+  },
+  cardAddressTextSelected: { color: "rgba(255,255,255,0.78)" },
   codeText: { fontSize: 11, fontWeight: "bold", color: "#888" },
   dot: { marginHorizontal: 6, color: '#CCC' },
   itemCount: { fontSize: 11, color: "#AAA", fontWeight: "600" },
@@ -258,8 +321,9 @@ const styles = StyleSheet.create({
   
   centerModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 25 },
   modalContent: { backgroundColor: '#FFF', borderRadius: 25, padding: 25, elevation: 5 },
-  modalTitle: { fontSize: 18, fontWeight: "900", textAlign: 'center', marginBottom: 20, color: WorkaholicTheme.colors.primary },
-  modalInput: { backgroundColor: '#F5F5F7', padding: 15, borderRadius: 12, fontSize: 16, fontWeight: "800", marginBottom: 20, borderWidth: 1, borderColor: '#EEE' },
+  modalTitle: { fontSize: 18, fontWeight: "900", textAlign: 'center', marginBottom: 16, color: WorkaholicTheme.colors.primary },
+  modalFieldLabel: { fontSize: 10, fontWeight: "800", color: "#999", letterSpacing: 0.6, marginBottom: 8 },
+  modalInput: { backgroundColor: '#F5F5F7', padding: 15, borderRadius: 12, fontSize: 16, fontWeight: "800", marginBottom: 14, borderWidth: 1, borderColor: '#EEE' },
   
   emptyState: { alignItems: "center", marginTop: 50 },
   emptyText: { color: "#CCC", marginTop: 10, fontWeight: '700' }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Platform, Linking, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WorkaholicTheme } from '../theme';
@@ -30,6 +30,43 @@ export default function ProjectHubScreen({ navigation, route }) {
   }
 
   const formattedProjectName = capitalizeFirst(project.name);
+
+  const openProjectDirections = async () => {
+    const raw = project.address;
+    const address = typeof raw === 'string' ? raw.trim() : '';
+    if (!address) {
+      Alert.alert(
+        'Ingen adress',
+        'Lägg till en arbetsplatsadress på projektet först. Du kan redigera projektet under Mina projekt eller när du skapar ett nytt projekt.'
+      );
+      return;
+    }
+    const q = encodeURIComponent(address);
+    try {
+      if (Platform.OS === 'ios') {
+        await Linking.openURL(`maps://?q=${q}`);
+      } else {
+        const geo = `geo:0,0?q=${q}`;
+        const supported = await Linking.canOpenURL(geo).catch(() => false);
+        if (supported) {
+          await Linking.openURL(geo);
+        } else {
+          await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${q}`);
+        }
+      }
+    } catch (_) {
+      try {
+        await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${q}`);
+      } catch {
+        Alert.alert('Kunde inte öppna navigering', 'Försök igen eller kontrollera att en kartapp är installerad.');
+      }
+    }
+  };
+
+  const addressLine =
+    typeof project.address === 'string' && project.address.trim().length > 0
+      ? project.address.trim()
+      : '—';
 
   const GLOBAL_TILES = [
     {
@@ -163,6 +200,16 @@ export default function ProjectHubScreen({ navigation, route }) {
            <Text style={styles.infoText}>
              SKAPAT: {project.createdAt ? new Date(project.createdAt).toLocaleDateString('sv-SE') : "Okänt"}
            </Text>
+           <Text style={styles.infoAddressLabel}>ARBETSPLATSADRESS</Text>
+           <Text style={styles.infoAddressText}>{addressLine}</Text>
+           <TouchableOpacity
+             style={styles.directionsBtn}
+             onPress={openProjectDirections}
+             activeOpacity={0.85}
+           >
+             <Ionicons name="navigate" size={20} color="#FFF" />
+             <Text style={styles.directionsBtnText}>Hitta hit</Text>
+           </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -236,6 +283,20 @@ const styles = StyleSheet.create({
   projectInfoCard: { backgroundColor: '#FFF', padding: 20, borderRadius: 22, marginTop: 30, borderWidth: 1, borderColor: '#EEE' },
   infoLabel: { fontSize: 9, fontWeight: '900', color: '#CCC', marginBottom: 10 },
   infoText: { fontSize: 12, color: '#666', fontWeight: 'bold', marginBottom: 5 },
+  infoAddressLabel: { fontSize: 9, fontWeight: '900', color: '#CCC', marginTop: 12, marginBottom: 6 },
+  infoAddressText: { fontSize: 13, color: '#1C1C1E', fontWeight: '700', lineHeight: 18 },
+  directionsBtn: {
+    marginTop: 14,
+    backgroundColor: WorkaholicTheme.colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+  },
+  directionsBtnText: { color: '#FFF', fontWeight: '900', fontSize: 13, letterSpacing: 0.5 },
 
   stickyFooter: { 
     position: 'absolute', bottom: 0, left: 0, right: 0,

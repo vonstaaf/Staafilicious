@@ -2,7 +2,7 @@
   "expo": {
     "name": "Workaholic",
     "slug": "staafilicious-frontend",
-    "version": "1.0.79",
+    "version": "1.0.80",
     "orientation": "portrait",
     "scheme": "workaholic",
     "icon": "./assets/icon.png",

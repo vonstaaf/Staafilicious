@@ -11,6 +11,8 @@ import { ProjectsProvider } from "./context/ProjectsContext";
 import { BadgeProvider } from "./context/BadgeContext";
 import { SettingsProvider } from "./context/SettingsContext"; 
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
+import { AIProvider } from "./context/AIContext";
+import AIAssistantOverlay from "./components/AIAssistantOverlay";
 
 // Navigation Stacks
 import AuthStack from "./navigation/AuthStack"; 
@@ -52,21 +54,24 @@ function AppContent() {
   if (companyLoading) return <LoadingScreen />;
 
   return (
-    <NavigationContainer theme={navigationTheme}>
-      {!user ? (
-        <AuthStack />
-      ) : needsLicense ? (
-        showLicenseCode ? (
-          <LicenseScreen onBack={() => setShowLicenseCode(false)} />
+    <>
+      <NavigationContainer theme={navigationTheme}>
+        {!user ? (
+          <AuthStack />
+        ) : needsLicense ? (
+          showLicenseCode ? (
+            <LicenseScreen onBack={() => setShowLicenseCode(false)} />
+          ) : (
+            <NoCompanyScreen onShowLicenseCode={() => setShowLicenseCode(true)} />
+          )
+        ) : licenseState === "expired" || licenseState === "trial_expired" ? (
+          <LicenseExpiredScreen />
         ) : (
-          <NoCompanyScreen onShowLicenseCode={() => setShowLicenseCode(true)} />
-        )
-      ) : licenseState === "expired" || licenseState === "trial_expired" ? (
-        <LicenseExpiredScreen />
-      ) : (
-        <MainStack />
-      )}
-    </NavigationContainer>
+          <MainStack />
+        )}
+      </NavigationContainer>
+      <AIAssistantOverlay />
+    </>
   );
 }
 
@@ -94,8 +99,10 @@ function App() {
           <ThemeProvider>
             <ProjectsProvider>
               <BadgeProvider>
-                <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-                <AppContent />
+                <AIProvider>
+                  <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+                  <AppContent />
+                </AIProvider>
               </BadgeProvider>
             </ProjectsProvider>
           </ThemeProvider>
