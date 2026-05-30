@@ -9,6 +9,11 @@ import { rotateSignatureForPortrait } from "../utils/signatureHelpers";
 import { handleInspectionPdf } from "../utils/pdfActions";
 import { CompanyContext } from "../context/CompanyContext";
 import { getDefaultItemsForElTemplateType } from "../constants/elInspectionDefaults";
+import { uploadSignaturePng } from "../utils/uploadSignature";
+
+function generateSigningToken() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+}
 
 /** Platt lista i checklist-ordning (bakåtkompatibilitet för PDF) */
 function flattenImagesByItemsOrder(itemList, byItem) {
@@ -41,6 +46,9 @@ export function useInspectionForm(project, routeParams, updateProject, templates
   const [isSignModalVisible, setIsSignModalVisible] = useState(false);
   const [isNameEntryModalVisible, setIsNameEntryModalVisible] = useState(false);
   const [isTypeModalVisible, setIsTypeModalVisible] = useState(false);
+  const [isQrModalVisible, setIsQrModalVisible] = useState(false);
+  const [currentSigningToken, setCurrentSigningToken] = useState(null);
+  const lastSavedEntryRef = useRef(null);
   const [inspectionSubtitle, setInspectionSubtitle] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [editingHistoryId, setEditingHistoryId] = useState(null);
@@ -246,8 +254,23 @@ export function useInspectionForm(project, routeParams, updateProject, templates
           } catch {
             /* behåll original */
           }
+
+          const entryId = editingHistoryId || Date.now();
+          const companyId = companyData?.companyId || companyFromTenant?.companyId || "";
+
+          // Upload craftsman signature to Firebase Storage (löser Firestore 1MB-gränsen).
+          let signatureUrl = null;
+          try {
+            signatureUrl = await uploadSignaturePng(fullSig, companyId, project.id, entryId, "craftsman");
+          } catch {
+            // Fallback: spara inline om Storage misslyckas (t.ex. offline).
+            signatureUrl = fullSig;
+          }
+
+          const signingToken = generateSigningToken();
+
           const entryData = {
-            id: editingHistoryId || Date.now(),
+            id: entryId,
             date: editingHistoryId ? routeParams?.existingData?.date : new Date().toISOString(),
             description: inspectionSubtitle || capitalizeFirst(project.name),
             checks,
@@ -255,8 +278,10 @@ export function useInspectionForm(project, routeParams, updateProject, templates
             notes: generalNotes,
             imagesByItem: imagesByItemId,
             images: flattenImagesByItemsOrder(items, imagesByItemId),
-            signature: fullSig,
+            signatureUrl,
+            signature: null,
             signedBy: nameClarification || "Installatör",
+            signingToken,
             items,
           };
 
@@ -282,30 +307,43 @@ export function useInspectionForm(project, routeParams, updateProject, templates
                 }),
           });
 
+          // Skapa signeringsbegäran i Firestore för kundensignering via QR.
+          if (companyId) {
+            try {
+              const expiresAt = new Date();
+              expiresAt.setDate(expiresAt.getDate() + 7);
+              const { setDoc, doc: firestoreDoc, serverTimestamp: srvTs } = await import("firebase/firestore");
+              await setDoc(firestoreDoc(db, "signingRequests", signingToken), {
+                type: "el_inspection",
+                companyId,
+                groupId: project.id,
+                entryId,
+                projectName: project.name || "",
+                inspectionDescription: entryData.description,
+                status: "pending",
+                craftsman: {
+                  name: entryData.signedBy,
+                  signatureUrl,
+                },
+                createdAt: srvTs(),
+                expiresAt,
+              });
+            } catch {
+              // Signeringsbegäran är icke-kritisk — fortsätt utan QR.
+            }
+          }
+
+          lastSavedEntryRef.current = entryData;
+          setCurrentSigningToken(signingToken);
           setIsNameEntryModalVisible(false);
           navigation.goBack();
 
-          const mergedCompanyForPdf = {
-            ...companyData,
-            ...(companyFromTenant && {
-              companyName: companyFromTenant.companyName ?? companyData?.companyName,
-              companyLogoUrl: companyFromTenant.companyLogoUrl ?? companyData?.companyLogoUrl,
-              logoUrl: companyFromTenant.logoUrl ?? companyFromTenant.companyLogoUrl ?? companyData?.logoUrl,
-            }),
-          };
-
+          // Visa QR-modal för kundensignering efter kort fördröjning.
           setTimeout(() => {
-            Alert.alert("Sparat!", "Egenkontrollen har arkiverats. Vill du skapa PDF nu?", [
-              { text: "Nej", style: "cancel" },
-              { text: "Ja", onPress: () => handleInspectionPdf(project, entryData, mergedCompanyForPdf) },
-            ]);
-          }, 500);
+            setIsQrModalVisible(true);
+          }, 600);
         } catch (e) {
-          const msg =
-            e?.code === "invalid-argument"
-              ? "Datat är för stort för Firestore. Kontakta support eller färre bilagor."
-              : e?.message || "Kunde inte spara.";
-          Alert.alert("Fel", msg);
+          Alert.alert("Fel", e?.message || "Kunde inte spara.");
         } finally {
           setIsProcessing(false);
         }
@@ -326,9 +364,76 @@ export function useInspectionForm(project, routeParams, updateProject, templates
       companyFromTenant,
       updateProject,
       navigation,
-      handleInspectionPdf,
     ]
   );
+
+  const handleCustomerSigned = useCallback(
+    async (customerData) => {
+      const entry = lastSavedEntryRef.current;
+      if (!entry || !project) return;
+      setIsQrModalVisible(false);
+
+      try {
+        const updatedHistory = (project.inspectionHistory || []).map((h) =>
+          h.id === entry.id
+            ? {
+                ...h,
+                customerSignatureUrl: customerData.signatureUrl,
+                customerSignedBy: customerData.name,
+                customerSignedAt: customerData.signedAt,
+              }
+            : h
+        );
+        await updateProject(project.id, { inspectionHistory: updatedHistory });
+        lastSavedEntryRef.current = {
+          ...entry,
+          customerSignatureUrl: customerData.signatureUrl,
+          customerSignedBy: customerData.name,
+          customerSignedAt: customerData.signedAt,
+        };
+      } catch {
+        // PDF kan fortfarande genereras utan att Firestore uppdateras.
+      }
+
+      const mergedCompanyForPdf = {
+        ...companyData,
+        ...(companyFromTenant && {
+          companyName: companyFromTenant.companyName ?? companyData?.companyName,
+          companyLogoUrl: companyFromTenant.companyLogoUrl ?? companyData?.companyLogoUrl,
+          logoUrl: companyFromTenant.logoUrl ?? companyFromTenant.companyLogoUrl ?? companyData?.logoUrl,
+        }),
+      };
+
+      Alert.alert("Kunden har signerat!", "Vill du skapa PDF med båda signaturerna nu?", [
+        { text: "Inte nu", style: "cancel" },
+        {
+          text: "Skapa PDF",
+          onPress: () => handleInspectionPdf(project, lastSavedEntryRef.current, mergedCompanyForPdf),
+        },
+      ]);
+    },
+    [project, companyData, companyFromTenant, updateProject]
+  );
+
+  const handleSkipCustomerSigning = useCallback(() => {
+    setIsQrModalVisible(false);
+    const entry = lastSavedEntryRef.current;
+    if (!entry || !project) return;
+
+    const mergedCompanyForPdf = {
+      ...companyData,
+      ...(companyFromTenant && {
+        companyName: companyFromTenant.companyName ?? companyData?.companyName,
+        companyLogoUrl: companyFromTenant.companyLogoUrl ?? companyData?.companyLogoUrl,
+        logoUrl: companyFromTenant.logoUrl ?? companyFromTenant.companyLogoUrl ?? companyData?.logoUrl,
+      }),
+    };
+
+    Alert.alert("Sparat!", "Egenkontrollen har arkiverats. Vill du skapa PDF nu?", [
+      { text: "Nej", style: "cancel" },
+      { text: "Ja", onPress: () => handleInspectionPdf(project, entry, mergedCompanyForPdf) },
+    ]);
+  }, [project, companyData, companyFromTenant]);
 
   const addNewSection = useCallback(() => {
     const n = [...items, { id: "s" + Date.now(), label: "Ny punkt", section: "Ny Kategori", desc: "", unit: "" }];
@@ -388,6 +493,9 @@ export function useInspectionForm(project, routeParams, updateProject, templates
     setIsNameEntryModalVisible,
     isTypeModalVisible,
     setIsTypeModalVisible,
+    isQrModalVisible,
+    setIsQrModalVisible,
+    currentSigningToken,
     inspectionSubtitle,
     setInspectionSubtitle,
     isProcessing,
@@ -399,6 +507,8 @@ export function useInspectionForm(project, routeParams, updateProject, templates
     removePhotoForItem,
     setStatus,
     handleSignature,
+    handleCustomerSigned,
+    handleSkipCustomerSigning,
     addNewSection,
     removeSection,
     addNewItem,

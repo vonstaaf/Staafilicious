@@ -29,6 +29,9 @@ import CarpenterChecklistScreen from "../screens/CarpenterChecklistScreen";
 import PhotoDocumentationScreen from "../screens/PhotoDocumentationScreen";
 import ConstructionLogScreen from "../screens/ConstructionLogScreen";
 
+// Skärmar (Grossist & PunchOut)
+import RexelPunchoutScreen from "../screens/RexelPunchoutScreen";
+
 // Skärmar (System & Profil)
 import SettingsScreen from "../screens/SettingsScreen";
 import ArchivedProjectsScreen from "../screens/ArchivedProjectsScreen"; 
@@ -77,7 +80,10 @@ export default function MainStack() {
       <Stack.Screen name="PhotoDocumentation" component={PhotoDocumentationScreen} />
       <Stack.Screen name="ConstructionLog" component={ConstructionLogScreen} />
       
-      {/* 6. SYSTEM & PROFIL */}
+      {/* 6. GROSSIST & PUNCHOUT */}
+      <Stack.Screen name="RexelPunchout" component={RexelPunchoutScreen} />
+
+      {/* 7. SYSTEM & PROFIL */}
       <Stack.Screen 
         name="Settings" 
         component={SettingsScreen} 

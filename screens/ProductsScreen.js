@@ -70,16 +70,17 @@ const SafeImage = ({ uri, style, placeholderStyle, iconSize = 28 }) => {
 };
 
 // 🔑 MEMOISERAD HEADER
-const ProductsHeader = React.memo(({ 
-  sumTotalOut, 
-  productCount, 
-  newRow, 
-  setNewRow, 
-  saveProduct, 
-  editingIndex, 
-  setEditingIndex, 
+const ProductsHeader = React.memo(({
+  sumTotalOut,
+  productCount,
+  newRow,
+  setNewRow,
+  saveProduct,
+  editingIndex,
+  setEditingIndex,
   setIsModalVisible,
   onOpenRexelImport,
+  onOpenRexelPunchout,
   initialRowState
 }) => {
 
@@ -107,6 +108,10 @@ const ProductsHeader = React.memo(({
               <Text style={styles.sectionLabel}>{editingIndex !== null ? "REDIGERA ARTIKEL" : "SNABB-LÄGG TILL"}</Text>
             </View>
             <View style={styles.headerLinksRow}>
+              <TouchableOpacity onPress={onOpenRexelPunchout} style={styles.searchLink}>
+                <Ionicons name="cart-outline" size={14} color={WorkaholicTheme.colors.primary} />
+                <Text style={styles.searchLinkText}>REXEL PUNCHOUT</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={onOpenRexelImport} style={styles.searchLink}>
                 <Ionicons name="flash-outline" size={14} color={WorkaholicTheme.colors.primary} />
                 <Text style={styles.searchLinkText}>REXEL LISTA</Text>
@@ -420,7 +425,7 @@ export default function ProductsScreen({ navigation, route }) {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 100 }}
           ListHeaderComponent={
-            <ProductsHeader 
+            <ProductsHeader
               sumTotalOut={sumTotalOut}
               productCount={currentProducts.length}
               newRow={newRow}
@@ -430,6 +435,9 @@ export default function ProductsScreen({ navigation, route }) {
               setEditingIndex={setEditingIndex}
               setIsModalVisible={setIsModalVisible}
               onOpenRexelImport={() => setIsRexelImportVisible(true)}
+              onOpenRexelPunchout={() =>
+                navigation.navigate("RexelPunchout", { groupId: project.id })
+              }
               initialRowState={initialRowState}
             />
           }

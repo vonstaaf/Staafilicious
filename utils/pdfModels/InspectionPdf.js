@@ -62,9 +62,15 @@ export const handleInspectionPdf = async (project, inspection, companyData) => {
       })
     );
     
+    // Stöd för Storage URLs (ny) och legacy inline base64 (gammal).
+    const craftsmanSigSrc = inspection.signatureUrl || inspection.signature || null;
+    const craftsmanSig = craftsmanSigSrc ? await getBase64Image(craftsmanSigSrc) : null;
+    const customerSigSrc = inspection.customerSignatureUrl || null;
+    const customerSig = customerSigSrc ? await getBase64Image(customerSigSrc) : null;
+
     const allItems = inspection.items || [];
-    const sections = [...new Set(allItems.map(i => i.section))];
-    
+    const sections = [...new Set(allItems.map((i) => i.section))];
+
     const dateStr = inspection.date 
       ? new Date(inspection.date).toLocaleDateString('sv-SE') 
       : new Date().toLocaleDateString('sv-SE');
@@ -293,13 +299,30 @@ export const handleInspectionPdf = async (project, inspection, companyData) => {
           }).join('')}
 
           <div class="footer-sig">
-            <p style="font-size: 10px;"><strong>Protokollet upprättat och signerat av:</strong></p>
-            <p style="font-size: 12px; margin-bottom: 4px;">${inspection.signedBy || inspection.signerName || '-'}</p>
-            ${inspection.signature ? `
-              <div class="signature-landscape-wrap" aria-hidden="true">
-                <img src="${inspection.signature}" class="signature-landscape" alt="" />
-              </div>` : ''}
-            <p style="font-size: 8px; color: #AAA; margin-top: 8px;">Detta dokument är genererat via Workaholic Pro.</p>
+            <p style="font-size: 10px; margin-bottom: 8px;"><strong>Protokollet upprättat och signerat av:</strong></p>
+            <div style="display: flex; gap: 24px; align-items: flex-start;">
+              <div style="flex: 1;">
+                <p style="font-size: 10px; margin: 0 0 2px 0; color: #555;">Hantverkare</p>
+                <p style="font-size: 12px; font-weight: bold; margin: 0 0 4px 0;">${inspection.signedBy || inspection.signerName || '—'}</p>
+                ${craftsmanSig ? `
+                  <div class="signature-landscape-wrap" aria-hidden="true">
+                    <img src="${craftsmanSig}" class="signature-landscape" alt="" />
+                  </div>` : ''}
+              </div>
+              ${customerSig ? `
+              <div style="flex: 1;">
+                <p style="font-size: 10px; margin: 0 0 2px 0; color: #555;">Kund</p>
+                <p style="font-size: 12px; font-weight: bold; margin: 0 0 4px 0;">${inspection.customerSignedBy || '—'}</p>
+                <div class="signature-landscape-wrap" aria-hidden="true">
+                  <img src="${customerSig}" class="signature-landscape" alt="" />
+                </div>
+                ${inspection.customerSignedAt ? `<p style="font-size: 8px; color: #999; margin-top: 4px;">Signerat: ${new Date(inspection.customerSignedAt).toLocaleDateString('sv-SE')}</p>` : ''}
+              </div>` : `
+              <div style="flex: 1; border: 1px dashed #DDD; border-radius: 8px; padding: 12px; min-height: 60px; display: flex; align-items: center; justify-content: center;">
+                <p style="font-size: 9px; color: #BBB; text-align: center; margin: 0;">Kundens signatur (ej mottagen)</p>
+              </div>`}
+            </div>
+            <p style="font-size: 8px; color: #AAA; margin-top: 12px;">Detta dokument är genererat via Workaholic Pro.</p>
           </div>
           </div>
 

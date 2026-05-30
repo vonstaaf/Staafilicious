@@ -5,9 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WorkaholicTheme } from '../theme';
 import AppHeader from '../components/AppHeader';
 import { capitalizeFirst } from '../utils/stringHelpers';
+import { useProfession } from '../context/ThemeContext';
 
 export default function ProjectHubScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  const profession = useProfession();
   const { project } = route.params || {}; // Projektet skickas med hit
 
   // --- SKYDD OM INGET PROJEKT ÄR VALT ---
@@ -30,6 +32,11 @@ export default function ProjectHubScreen({ navigation, route }) {
   }
 
   const formattedProjectName = capitalizeFirst(project.name);
+
+  const professionLabel =
+    typeof profession === 'string' && profession.trim()
+      ? profession.trim().toUpperCase()
+      : 'YRKESSPECIFIKT';
 
   const openProjectDirections = async () => {
     const raw = project.address;
@@ -174,7 +181,7 @@ export default function ProjectHubScreen({ navigation, route }) {
           ))}
         </View>
 
-        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>BYGG / SNICKERI</Text>
+        <Text style={[styles.sectionLabel, { marginTop: 28 }]}>{professionLabel}</Text>
         <View style={styles.grid}>
           {BUILD_TILES.map((tile) => (
             <TouchableOpacity

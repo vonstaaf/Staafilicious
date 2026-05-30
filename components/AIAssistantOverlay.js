@@ -1,5 +1,6 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
+  Animated,
   View,
   Text,
   Modal,
@@ -47,6 +48,7 @@ export default function AIAssistantOverlay() {
     messages,
     isLoading,
     isPanelOpen,
+    actionStatus,
     openPanel,
     closePanel,
     sendMessageToAI,
@@ -61,6 +63,78 @@ export default function AIAssistantOverlay() {
     !needsLicense &&
     licenseState !== "expired" &&
     licenseState !== "trial_expired";
+
+  /**
+   * 1 = expanderad (full storlek, vid kanten i normalt läge)
+   * 0 = minimerad (krympt, halvt utanför skärmen, sänkt opacity)
+   */
+  const animationValue = useRef(new Animated.Value(1)).current;
+  const minimizeTimerRef = useRef(null);
+  const [isMinimized, setIsMinimized] = useState(false);
+
+  const clearMinimizeTimer = useCallback(() => {
+    if (minimizeTimerRef.current) {
+      clearTimeout(minimizeTimerRef.current);
+      minimizeTimerRef.current = null;
+    }
+  }, []);
+
+  const animateTo = useCallback(
+    (toValue, duration) => {
+      Animated.timing(animationValue, {
+        toValue,
+        duration,
+        useNativeDriver: true,
+      }).start();
+    },
+    [animationValue]
+  );
+
+  const expandFab = useCallback(() => {
+    clearMinimizeTimer();
+    setIsMinimized(false);
+    animateTo(1, 220);
+  }, [animateTo, clearMinimizeTimer]);
+
+  const minimizeFab = useCallback(() => {
+    setIsMinimized(true);
+    animateTo(0, 320);
+  }, [animateTo]);
+
+  const scheduleMinimize = useCallback(() => {
+    clearMinimizeTimer();
+    minimizeTimerRef.current = setTimeout(() => {
+      minimizeTimerRef.current = null;
+      minimizeFab();
+    }, 3000);
+  }, [clearMinimizeTimer, minimizeFab]);
+
+  useEffect(() => {
+    if (!showFab) {
+      clearMinimizeTimer();
+      return undefined;
+    }
+    if (isPanelOpen) {
+      // Panelen är öppen: håll FAB:en gömd, ingen timer behövs.
+      clearMinimizeTimer();
+      return undefined;
+    }
+    // Mount eller panelen just stängd → visa expanderad, starta timer.
+    expandFab();
+    scheduleMinimize();
+    return clearMinimizeTimer;
+  }, [
+    showFab,
+    isPanelOpen,
+    expandFab,
+    scheduleMinimize,
+    clearMinimizeTimer,
+  ]);
+
+  const handleFabPress = useCallback(() => {
+    expandFab();
+    openPanel();
+  }, [expandFab, openPanel]);
 
   useEffect(() => {
     if (!isPanelOpen || messages.length === 0) return;
@@ -111,26 +185,56 @@ export default function AIAssistantOverlay() {
     return null;
   }
 
+  const fabTranslateX = animationValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [28, 0],
+  });
+  const fabScale = animationValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.85, 1],
+  });
+  const fabOpacity = animationValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.6, 1],
+  });
+
   return (
     <>
       {!isPanelOpen ? (
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="Öppna AI-assistent"
-          activeOpacity={0.92}
-          onPress={openPanel}
+        <Animated.View
+          pointerEvents="box-none"
           style={[
-            styles.fab,
+            styles.fabWrap,
             {
-              bottom: 24 + insets.bottom,
+              bottom: 100 + insets.bottom,
               right: 24,
-              backgroundColor: theme.colors.primary,
-              ...(Platform.OS === "android" ? { elevation: 6 } : {}),
+              opacity: fabOpacity,
+              transform: [{ translateX: fabTranslateX }, { scale: fabScale }],
             },
           ]}
         >
-          <Ionicons name="sparkles" size={26} color="#FFF" />
-        </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={
+              isMinimized
+                ? "Visa AI-assistent (minimerad)"
+                : "Öppna AI-assistent"
+            }
+            accessibilityState={{ expanded: !isMinimized }}
+            activeOpacity={0.92}
+            onPress={handleFabPress}
+            hitSlop={{ top: 8, bottom: 8, left: 16, right: 8 }}
+            style={[
+              styles.fab,
+              {
+                backgroundColor: theme.colors.primary,
+                ...(Platform.OS === "android" ? { elevation: 6 } : {}),
+              },
+            ]}
+          >
+            <Ionicons name="sparkles" size={26} color="#FFF" />
+          </TouchableOpacity>
+        </Animated.View>
       ) : null}
 
       <Modal
@@ -205,12 +309,26 @@ export default function AIAssistantOverlay() {
                 </View>
               }
               ListFooterComponent={
-                isLoading ? (
-                  <View style={styles.typingRow}>
-                    <ActivityIndicator color={theme.colors.primary} size="small" />
-                    <Text style={styles.typingText}>Assistenten tänker…</Text>
-                  </View>
-                ) : null
+                <>
+                  {isLoading ? (
+                    <View style={styles.typingRow}>
+                      <ActivityIndicator color={theme.colors.primary} size="small" />
+                      <Text style={styles.typingText}>Assistenten tänker…</Text>
+                    </View>
+                  ) : null}
+                  {actionStatus ? (
+                    <View style={styles.actionStatusRow}>
+                      <ActivityIndicator
+                        color={theme.colors.primary}
+                        size="small"
+                        style={styles.actionStatusSpinner}
+                      />
+                      <Text style={[styles.actionStatusText, { color: theme.colors.primary }]}>
+                        {actionStatus}
+                      </Text>
+                    </View>
+                  ) : null}
+                </>
               }
               onContentSizeChange={() =>
                 listRef.current?.scrollToEnd({ animated: true })
@@ -283,12 +401,14 @@ export default function AIAssistantOverlay() {
 }
 
 const styles = StyleSheet.create({
-  fab: {
+  fabWrap: {
     position: "absolute",
+    zIndex: 50,
+  },
+  fab: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    zIndex: 50,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
@@ -377,6 +497,25 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   typingText: { fontSize: 13, color: "#8E8E93", fontWeight: "600" },
+  actionStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
+    marginLeft: 4,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    backgroundColor: "#F0F7FF",
+    borderRadius: 12,
+    alignSelf: "flex-start",
+    maxWidth: "90%",
+  },
+  actionStatusSpinner: { flexShrink: 0 },
+  actionStatusText: {
+    fontSize: 12,
+    fontWeight: "700",
+    flexShrink: 1,
+  },
   quickScroll: {
     gap: 8,
     paddingBottom: 10,

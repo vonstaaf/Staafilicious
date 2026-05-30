@@ -20,15 +20,22 @@ import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../components/AppHeader";
 import SignModal from "../components/inspection/SignModal";
+import CustomerSigningQRModal from "../components/inspection/CustomerSigningQRModal";
 import { WorkaholicTheme } from "../theme";
 import { CompanyContext } from "../context/CompanyContext";
 import { db, auth } from "../firebaseConfig";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, doc, setDoc, updateDoc } from "firebase/firestore";
 import { capitalizeFirst } from "../utils/stringHelpers";
 import { rotateSignatureForPortrait } from "../utils/signatureHelpers";
 import { uploadInspectionPhoto } from "../utils/uploadInspectionMedia";
+import { uploadSignaturePng } from "../utils/uploadSignature";
 import { VVS_EGENKONTROLL_ITEMS } from "../constants/vvsChecklist";
 import VoiceInputButton from "../components/VoiceInputButton";
+import { WORKAHOLIC_API_BASE } from "../constants/workaholicApi";
+
+function generateSigningToken() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+}
 
 export default function SmartEgenkontrollScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
@@ -45,6 +52,9 @@ export default function SmartEgenkontrollScreen({ navigation, route }) {
   const [nameClarification, setNameClarification] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [currentSigningToken, setCurrentSigningToken] = useState(null);
+  const savedDocRef = React.useRef(null);
 
   const setStatus = useCallback((id, status) => {
     const newChecks = { ...checks, [id]: checks[id] === status ? null : status };
@@ -142,26 +152,86 @@ export default function SmartEgenkontrollScreen({ navigation, route }) {
 
     setIsProcessing(true);
     try {
-      await addDoc(collection(db, "companies", companyId, "groups", groupId, "documents"), {
+      const entryId = Date.now();
+
+      // Upload craftsman signature to Firebase Storage.
+      let signatureUrl = fullSig;
+      try {
+        signatureUrl = await uploadSignaturePng(fullSig, companyId, groupId, entryId, "craftsman");
+      } catch {
+        // Fallback inline om Storage inte är tillgängligt.
+      }
+
+      const signingToken = generateSigningToken();
+      const signer = nameClarification || "Installatör";
+
+      const docRef = await addDoc(collection(db, "companies", companyId, "groups", groupId, "documents"), {
         type: "smart_inspection",
         projectName: capitalizeFirst(project.name),
+        entryId,
         items,
         checks,
         rowComments,
         photos,
-        signature: fullSig,
-        signedBy: nameClarification || "Installatör",
+        signatureUrl,
+        signature: null,
+        signedBy: signer,
+        signingToken,
         createdBy: auth.currentUser?.uid,
         createdAt: serverTimestamp(),
       });
-      Alert.alert("Sparat", "Smart egenkontroll har arkiverats.", [
-        { text: "OK", onPress: () => navigation.goBack() },
-      ]);
+
+      savedDocRef.current = { docId: docRef.id, companyId, groupId };
+
+      // Skapa signeringsbegäran för kundensignering.
+      try {
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+        await setDoc(doc(db, "signingRequests", signingToken), {
+          type: "smart_inspection",
+          companyId,
+          groupId,
+          docId: docRef.id,
+          entryId,
+          projectName: capitalizeFirst(project.name),
+          inspectionDescription: "VVS Egenkontroll",
+          status: "pending",
+          craftsman: { name: signer, signatureUrl },
+          createdAt: serverTimestamp(),
+          expiresAt,
+        });
+      } catch {
+        // Icke-kritisk — fortsätt utan QR.
+      }
+
+      setCurrentSigningToken(signingToken);
+      navigation.goBack();
+      setTimeout(() => setQrModalVisible(true), 600);
     } catch (e) {
       Alert.alert("Kunde inte spara", e?.message || "Försök igen.");
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleCustomerSigned = async (customerData) => {
+    setQrModalVisible(false);
+    const saved = savedDocRef.current;
+    if (saved) {
+      try {
+        await updateDoc(
+          doc(db, "companies", saved.companyId, "groups", saved.groupId, "documents", saved.docId),
+          {
+            customerSignatureUrl: customerData.signatureUrl,
+            customerSignedBy: customerData.name,
+            customerSignedAt: customerData.signedAt,
+          }
+        );
+      } catch {
+        // Icke-kritisk.
+      }
+    }
+    Alert.alert("Kunden har signerat!", "Protokollet är nu komplett med båda signaturerna.");
   };
 
   if (!project) {
@@ -326,6 +396,15 @@ export default function SmartEgenkontrollScreen({ navigation, route }) {
         buttonText="SLUTFÖR & ARKIVERA"
         onClose={closeSignModal}
         onSignature={handleSignature}
+      />
+
+      <CustomerSigningQRModal
+        visible={qrModalVisible}
+        token={currentSigningToken}
+        projectName={project?.name || ""}
+        craftsmanName={nameClarification || "Installatör"}
+        onCustomerSigned={handleCustomerSigned}
+        onSkip={() => setQrModalVisible(false)}
       />
     </View>
   );

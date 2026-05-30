@@ -25,6 +25,7 @@ import { useInspectionForm } from "../hooks/useInspectionForm";
 import TemplatePickerModal from "../components/inspection/TemplatePickerModal";
 import NameEntryModal from "../components/inspection/NameEntryModal";
 import SignModal from "../components/inspection/SignModal";
+import CustomerSigningQRModal from "../components/inspection/CustomerSigningQRModal";
 import InspectionSectionList from "../components/inspection/InspectionSectionList";
 import { validateMeasurement, saveMeasurement } from "../utils/measurementValidation";
 
@@ -187,6 +188,8 @@ export default function InspectionScreen({ route, navigation }) {
     setIsNameEntryModalVisible,
     isTypeModalVisible,
     setIsTypeModalVisible,
+    isQrModalVisible,
+    currentSigningToken,
     inspectionSubtitle,
     setInspectionSubtitle,
     isProcessing,
@@ -196,6 +199,8 @@ export default function InspectionScreen({ route, navigation }) {
     takePhoto,
     setStatus,
     handleSignature,
+    handleCustomerSigned,
+    handleSkipCustomerSigning,
     addNewSection,
     removeSection,
     addNewItem,
@@ -368,6 +373,15 @@ export default function InspectionScreen({ route, navigation }) {
           setIsSignModalVisible(false);
         }}
         onSignature={handleSignature}
+      />
+
+      <CustomerSigningQRModal
+        visible={isQrModalVisible}
+        token={currentSigningToken}
+        projectName={project?.name || ""}
+        craftsmanName={nameClarification || "Installatör"}
+        onCustomerSigned={handleCustomerSigned}
+        onSkip={handleSkipCustomerSigning}
       />
     </View>
   );

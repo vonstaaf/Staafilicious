@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { StatusBar } from "react-native";
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
+import { navigationRef } from "./utils/navigationService";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -55,7 +56,7 @@ function AppContent() {
 
   return (
     <>
-      <NavigationContainer theme={navigationTheme}>
+      <NavigationContainer ref={navigationRef} theme={navigationTheme}>
         {!user ? (
           <AuthStack />
         ) : needsLicense ? (
