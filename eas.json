@@ -55,7 +55,8 @@
         "track": "production"
       },
       "ios": {
-        "appleId": "fredrik.s@j2elteknik.se"
+        "appleId": "fredrik.s@j2elteknik.se",
+        "ascAppId": "6757077265"
       }
     }
   }
