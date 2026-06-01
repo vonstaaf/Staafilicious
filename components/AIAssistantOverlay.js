@@ -404,6 +404,7 @@ const styles = StyleSheet.create({
   fabWrap: {
     position: "absolute",
     zIndex: 50,
+    elevation: 11, // Android: TabBar har elevation 10 — FAB måste vara högre för korrekt rendering och touch-prioritet
   },
   fab: {
     width: 58,

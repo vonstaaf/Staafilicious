@@ -321,87 +321,84 @@ export function AIProvider({ children }) {
         createdAt: Date.now(),
       };
 
-      setMessages((prev) => {
-        const next = [...prev, userMsg];
+      // Bygg nästa meddelandelista och uppdatera state synkront — utan updater-callback.
+      // Async-logiken körs sedan direkt i funktionens scope så att React Concurrent Mode
+      // aldrig kan anropa setState-callbacken mer än en gång och trigga dubbla API-anrop.
+      const nextMessages = [...messages, userMsg];
+      setMessages(nextMessages);
 
-        (async () => {
-          setIsLoading(true);
+      (async () => {
+        setIsLoading(true);
 
-          const payload = {
-            messages: next.map(({ role, content }) => ({ role, content })),
-            context: {
-              profession: profession && String(profession).trim() ? profession : null,
-              activeProject: selectedProject
-                ? {
-                    id: selectedProject.id,
-                    name: selectedProject.name,
-                    code: selectedProject.code ?? null,
-                    address:
-                      typeof selectedProject.address === "string"
-                        ? selectedProject.address
-                        : null,
-                  }
-                : null,
-            },
-          };
+        const payload = {
+          messages: nextMessages.map(({ role, content }) => ({ role, content })),
+          context: {
+            profession: profession && String(profession).trim() ? profession : null,
+            activeProject: selectedProject
+              ? {
+                  id: selectedProject.id,
+                  name: selectedProject.name,
+                  code: selectedProject.code ?? null,
+                  address:
+                    typeof selectedProject.address === "string"
+                      ? selectedProject.address
+                      : null,
+                }
+              : null,
+          },
+        };
 
-          try {
-            const user = auth.currentUser;
-            if (!user) {
-              throw new Error("Du måste vara inloggad för att använda assistenten.");
-            }
-            const idToken = await user.getIdToken(true);
-            const res = await fetch(workaholicApiUrl(AI_ASSISTANT_API_PATH), {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${idToken}`,
-              },
-              body: JSON.stringify(payload),
-            });
-
-            const data = await readJsonSafe(res);
-
-            if (!res.ok) {
-              const errMsg =
-                res.status === 401
-                  ? "Sessionen har gått ut. Logga ut och in igen."
-                  : data.error || data.details || `Servern svarade med HTTP ${res.status}`;
-              throw new Error(errMsg);
-            }
-
-            const { reply, actions } = normalizeApiResponse(data);
-
-            // Visa AI:ens textsvar direkt (innan actions körs)
-            if (reply) {
-              appendAssistantMessage(reply);
-            }
-
-            setIsLoading(false);
-
-            // Kör action-kedjan sekventiellt (om det finns actions)
-            if (actions.length > 0) {
-              await executeActionQueue(actions);
-            } else if (!reply) {
-              // Varken text eller actions — visa ett fallback-meddelande
-              appendAssistantMessage(
-                "Inget svar från assistenten. Kontrollera att /api/ai/assistant är aktiv på backend."
-              );
-            }
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            appendAssistantMessage(`Kunde inte nå assistenten: ${msg}`);
-          } finally {
-            setIsLoading(false);
-            setActionStatus(null);
-            requestInFlightRef.current = false;
+        try {
+          const user = auth.currentUser;
+          if (!user) {
+            throw new Error("Du måste vara inloggad för att använda assistenten.");
           }
-        })();
+          const idToken = await user.getIdToken(true);
+          const res = await fetch(workaholicApiUrl(AI_ASSISTANT_API_PATH), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify(payload),
+          });
 
-        return next;
-      });
+          const data = await readJsonSafe(res);
+
+          if (!res.ok) {
+            const errMsg =
+              res.status === 401
+                ? "Sessionen har gått ut. Logga ut och in igen."
+                : data.error || data.details || `Servern svarade med HTTP ${res.status}`;
+            throw new Error(errMsg);
+          }
+
+          const { reply, actions } = normalizeApiResponse(data);
+
+          if (reply) {
+            appendAssistantMessage(reply);
+          }
+
+          setIsLoading(false);
+
+          if (actions.length > 0) {
+            await executeActionQueue(actions);
+          } else if (!reply) {
+            appendAssistantMessage(
+              "Inget svar från assistenten. Kontrollera att /api/ai/assistant är aktiv på backend."
+            );
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          appendAssistantMessage(`Kunde inte nå assistenten: ${msg}`);
+        } finally {
+          setIsLoading(false);
+          setActionStatus(null);
+          requestInFlightRef.current = false;
+        }
+      })();
     },
-    [profession, selectedProject, appendAssistantMessage, executeActionQueue]
+    [messages, profession, selectedProject, appendAssistantMessage, executeActionQueue]
   );
 
   const value = useMemo(
