@@ -1,5 +1,5 @@
 import { db, auth } from "../firebaseConfig";
-import { doc, setDoc, updateDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import { doc, updateDoc, getDoc, serverTimestamp, runTransaction } from "firebase/firestore";
 import { WORKAHOLIC_API_BASE } from "../constants/workaholicApi";
 
 // ─── Token ────────────────────────────────────────────────────────────────────
@@ -63,36 +63,46 @@ function customerViewRef(token) {
 export async function initCustomerView(groupId, address, companyId) {
   if (!groupId || !companyId) throw new Error("groupId och companyId krävs.");
 
-  // Kolla om en kundvy redan finns för detta projekt.
   const gRef = groupRef(companyId, groupId);
-  const groupSnap = await getDoc(gRef);
-  if (groupSnap.exists()) {
+
+  return runTransaction(db, async (transaction) => {
+    // Läs group-dokumentet inuti transaktionen — förhindrar TOCTOU om två
+    // enheter anropar initCustomerView samtidigt för samma projekt.
+    const groupSnap = await transaction.get(gRef);
+
+    if (!groupSnap.exists()) {
+      throw new Error("Projektdokumentet hittades inte.");
+    }
+
+    // Idempotent: returnera befintlig token utan att skriva något.
     const existing = groupSnap.data()?.customerViewToken;
     if (existing) {
       return { token: existing, url: buildCustomerViewUrl(existing) };
     }
-  }
 
-  const token = generateCustomerViewToken();
+    const token = generateCustomerViewToken();
+    const cvRef = customerViewRef(token);
 
-  await setDoc(customerViewRef(token), {
-    groupId,
-    companyId,
-    address: String(address || "").trim(),
-    status: "active",
-    permissions: DEFAULT_PERMISSIONS,
-    milestones: defaultMilestones(),
-    documents: [],
-    gallery: [],
-    accessShareToken: token,
-    createdBy: auth.currentUser?.uid || "",
-    createdAt: serverTimestamp(),
+    // Båda skrivningarna ingår i samma transaktion.
+    // Firestore garanterar att antingen lyckas BÅDA eller INGEN — aldrig halva.
+    transaction.set(cvRef, {
+      groupId,
+      companyId,
+      address: String(address || "").trim(),
+      status: "active",
+      permissions: DEFAULT_PERMISSIONS,
+      milestones: defaultMilestones(),
+      documents: [],
+      gallery: [],
+      accessShareToken: token,
+      createdBy: auth.currentUser?.uid || "",
+      createdAt: serverTimestamp(),
+    });
+
+    transaction.update(gRef, { customerViewToken: token });
+
+    return { token, url: buildCustomerViewUrl(token) };
   });
-
-  // Lagra token på group-dokumentet för snabb lookup i appen.
-  await updateDoc(gRef, { customerViewToken: token });
-
-  return { token, url: buildCustomerViewUrl(token) };
 }
 
 /**

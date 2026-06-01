@@ -4,6 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { subscribeCompanyProfileForUser } from "../utils/companyProfile";
 import { auth, db } from "../firebaseConfig";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { capitalizeFirst } from "../utils/stringHelpers";
 import { rotateSignatureForPortrait } from "../utils/signatureHelpers";
 import { handleInspectionPdf } from "../utils/pdfActions";
@@ -312,8 +313,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
             try {
               const expiresAt = new Date();
               expiresAt.setDate(expiresAt.getDate() + 7);
-              const { setDoc, doc: firestoreDoc, serverTimestamp: srvTs } = await import("firebase/firestore");
-              await setDoc(firestoreDoc(db, "signingRequests", signingToken), {
+              await setDoc(doc(db, "signingRequests", signingToken), {
                 type: "el_inspection",
                 companyId,
                 groupId: project.id,
@@ -325,7 +325,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
                   name: entryData.signedBy,
                   signatureUrl,
                 },
-                createdAt: srvTs(),
+                createdAt: serverTimestamp(),
                 expiresAt,
               });
             } catch {
@@ -336,12 +336,10 @@ export function useInspectionForm(project, routeParams, updateProject, templates
           lastSavedEntryRef.current = entryData;
           setCurrentSigningToken(signingToken);
           setIsNameEntryModalVisible(false);
-          navigation.goBack();
-
-          // Visa QR-modal för kundensignering efter kort fördröjning.
-          setTimeout(() => {
-            setIsQrModalVisible(true);
-          }, 600);
+          // Visa QR-modalen medan InspectionScreen fortfarande är monterad.
+          // navigation.goBack() sker i handleCustomerSigned / handleSkipCustomerSigning
+          // när QR-modalen stängs — aldrig innan.
+          setIsQrModalVisible(true);
         } catch (e) {
           Alert.alert("Fel", e?.message || "Kunde inte spara.");
         } finally {
@@ -374,7 +372,27 @@ export function useInspectionForm(project, routeParams, updateProject, templates
       setIsQrModalVisible(false);
 
       try {
-        const updatedHistory = (project.inspectionHistory || []).map((h) =>
+        const companyId = companyData?.companyId || companyFromTenant?.companyId || "";
+
+        // Hämta senaste inspectionHistory direkt från Firestore istället för att
+        // lita på closure-kopian av project, som kan vara minuter gammal när
+        // kunden signerar. Utan detta riskerar vi att skriva över ändringar som
+        // gjorts från en annan enhet under väntetiden (lost update).
+        let baseHistory = project.inspectionHistory || [];
+        if (companyId) {
+          try {
+            const freshSnap = await getDoc(
+              doc(db, "companies", companyId, "groups", project.id)
+            );
+            if (freshSnap.exists()) {
+              baseHistory = freshSnap.data()?.inspectionHistory || [];
+            }
+          } catch {
+            // Nätverksavbrott — fortsätt med closure-kopian som säker fallback.
+          }
+        }
+
+        const updatedHistory = baseHistory.map((h) =>
           h.id === entry.id
             ? {
                 ...h,
@@ -404,6 +422,9 @@ export function useInspectionForm(project, routeParams, updateProject, templates
         }),
       };
 
+      // Gå tillbaka till föregående skärm nu när QR-modalen stängs.
+      // Alert är globalt i React Native och visas korrekt oavsett aktiv skärm.
+      navigation.goBack();
       Alert.alert("Kunden har signerat!", "Vill du skapa PDF med båda signaturerna nu?", [
         { text: "Inte nu", style: "cancel" },
         {
@@ -412,7 +433,7 @@ export function useInspectionForm(project, routeParams, updateProject, templates
         },
       ]);
     },
-    [project, companyData, companyFromTenant, updateProject]
+    [project, companyData, companyFromTenant, updateProject, navigation]
   );
 
   const handleSkipCustomerSigning = useCallback(() => {
@@ -429,11 +450,12 @@ export function useInspectionForm(project, routeParams, updateProject, templates
       }),
     };
 
+    navigation.goBack();
     Alert.alert("Sparat!", "Egenkontrollen har arkiverats. Vill du skapa PDF nu?", [
       { text: "Nej", style: "cancel" },
       { text: "Ja", onPress: () => handleInspectionPdf(project, entry, mergedCompanyForPdf) },
     ]);
-  }, [project, companyData, companyFromTenant]);
+  }, [project, companyData, companyFromTenant, navigation]);
 
   const addNewSection = useCallback(() => {
     const n = [...items, { id: "s" + Date.now(), label: "Ny punkt", section: "Ny Kategori", desc: "", unit: "" }];
